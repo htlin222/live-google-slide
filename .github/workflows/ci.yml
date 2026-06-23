@@ -1,0 +1,23 @@
+name: CI
+
+# 對 main 開 PR 時驗證（不部署）
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+
+      - name: Worker bundles (dry-run, no deploy)
+        run: npx wrangler deploy --dry-run --outdir dist
+
+      - name: Extension manifest is valid JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json','utf8')); console.log('manifest ok')"

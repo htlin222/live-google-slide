@@ -1,4 +1,4 @@
-# slide-sync
+# live-google-slide
 
 把你正在放映的 Google Slides，即時同步到任何一台裝置——跑在**你自己的 Cloudflare Worker** 上，用 **PIN** 控管誰能看。
 
@@ -68,13 +68,15 @@ npm run secret           # 設定 PRESENT_KEY（主控端控制密碼）
 ## 專案結構
 
 ```
-slide-sync/
+live-google-slide/
 ├─ src/index.js          Worker + Durable Object（relay、PIN、live/offline）
 ├─ extension/            Chrome 外掛（MV3）
 │  ├─ manifest.json
 │  ├─ background.js      唯一持有對 CF 的 WebSocket（避開頁面 CSP）
 │  ├─ content.js         讀放映當前頁 + 心跳保活
 │  ├─ popup.* / options.*
+├─ .github/workflows/   CI（PR dry-run）、Worker 部署、外掛發版
+├─ CHANGELOG.md
 ├─ wrangler.toml
 ├─ .dev.vars.example     本機 secret 範本（複製成 .dev.vars）
 └─ package.json
@@ -111,3 +113,11 @@ MIT — 見 [LICENSE](./LICENSE)。
 外掛版本 = `manifest.json` 的 **major.minor** + 該次 **run 編號**當 patch（例如 `1.0.37`），每次發版自動遞增，**不會 commit 回 main**（避開分支保護與遞迴觸發）。要升 major/minor，手動改 `extension/manifest.json` 的前兩段即可。
 
 > `PRESENT_KEY` 是執行期 secret，仍用 `wrangler secret put PRESENT_KEY` 設定，**不經過 CI**。
+
+### Pull Request 檢查（不部署）
+
+對 `main` 開 PR 會跑 `ci.yml`：用 `wrangler deploy --dry-run` 確認 Worker 能正常 bundle，並驗證外掛 `manifest.json` 是合法 JSON。純驗證、不會部署、不需 secret。
+
+### CHANGELOG → Release 說明
+
+把要寫進下次發版的條目放在 `CHANGELOG.md` 的 `## [Unreleased]` 底下。`release-extension.yml` 會擷取這一段當作 GitHub Release 的說明，後面再自動接上本次合併的 PR/commit 清單。

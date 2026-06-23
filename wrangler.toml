@@ -1,4 +1,4 @@
-name = "slide-sync"
+name = "live-google-slide"
 main = "src/index.js"
 # 2026-04-07+ 讓 web_socket_auto_reply_to_close 預設開啟
 compatibility_date = "2026-04-07"

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Slide Live Relay",
+  "name": "Live Google Slide",
   "version": "1.0.0",
   "description": "讀 Google 原生放映的當前頁，relay 到你的 Cloudflare，觀眾輸 PIN 看 live slide。",
   "permissions": ["storage", "tabs", "alarms"],

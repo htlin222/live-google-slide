@@ -1,5 +1,5 @@
 {
-  "name": "slide-sync",
+  "name": "live-google-slide",
   "version": "1.0.0",
   "description": "Mirror your Google Slides to any device in real time through your own Cloudflare Worker, gated by a PIN.",
   "license": "MIT",

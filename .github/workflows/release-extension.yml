@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 20
 
-      # 版本 = manifest 的 major.minor + 本次 run 編號當 patch（自動遞增，不需 commit 回 main）
+      # 版本 = manifest 的 major.minor + 本次 run 編號當 patch（自動遞增，不 commit 回 main）
       - name: Compute version
         id: v
         run: |
@@ -37,15 +37,24 @@ jobs:
             fs.writeFileSync("extension/manifest.json", JSON.stringify(m,null,2)+"\n");
           '
 
+      # 從 CHANGELOG 取 [Unreleased] 段落當 Release 說明（空的話給預設一行）
+      - name: Build release body from CHANGELOG
+        run: |
+          awk '/^## \[Unreleased\]/{f=1;next} /^## /{f=0} f' CHANGELOG.md > RELEASE_BODY.md || true
+          if ! grep -q '[^[:space:]]' RELEASE_BODY.md; then
+            echo "Automated extension release v${{ steps.v.outputs.version }}." > RELEASE_BODY.md
+          fi
+
       - name: Package extension
         run: |
           cd extension
-          zip -rq "../slide-sync-extension-v${{ steps.v.outputs.version }}.zip" .
+          zip -rq "../live-google-slide-extension-v${{ steps.v.outputs.version }}.zip" .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}
           name: Extension v${{ steps.v.outputs.version }}
-          generate_release_notes: true
-          files: slide-sync-extension-v${{ steps.v.outputs.version }}.zip
+          body_path: RELEASE_BODY.md
+          generate_release_notes: true   # 自動附上本次合併的 PR / commit 清單，接在上面內容之後
+          files: live-google-slide-extension-v${{ steps.v.outputs.version }}.zip
