@@ -21,8 +21,6 @@ async function init() {
   if (!sync.cfUrl) { $("warn").style.display = "block"; $("warn").textContent = "請先點右上 ⚙ 填你的 Cloudflare 網址。"; }
 
   const c = local.deckCfg || {};
-  $("embed").value = c.embedBase || await activeSlideEmbed();
-  $("room").value = c.room || "default";
   $("pin").value = c.pin || genPin();
 
   setActive(local.active);
@@ -42,7 +40,7 @@ async function refreshAuth() {
 function setActive(active) {
   $("start").style.display = active ? "none" : "block";
   $("stop").style.display = active ? "block" : "none";
-  ["embed", "room", "pin", "gen", "signin"].forEach(id => $(id).disabled = !!active);
+  ["pin", "gen", "signin"].forEach(id => $(id).disabled = !!active);
 }
 
 async function refreshStatus() {
@@ -55,7 +53,7 @@ async function refreshStatus() {
     $("status").innerHTML =
       (connected ? "<span class='live'>● 直播中</span>" : "<span class='off'>○ 連線中斷，重試中…</span>") +
       "<br>PIN：<span class='pin'>" + (cfg.pin || "—") + "</span>" +
-      "<br>觀眾開：<span class='view'>" + VIEW_HINT(sync.cfUrl || "") + (cfg.room || "") + "</span>" +
+      "<br>觀眾開：<span class='view'>" + (sync.cfUrl || "").replace(/\/$/, "") + "</span>" +
       "<br>編輯或放映模式翻頁都會同步。";
   } else {
     $("status").textContent = "按「開始直播」（第一次會跳 CF Access 登入）。之後在編輯或放映模式翻頁都會同步。";
@@ -76,12 +74,11 @@ $("signin").onclick = async () => {
 $("start").onclick = async () => {
   const sync = await chrome.storage.sync.get(["cfUrl"]);
   if (!sync.cfUrl) { chrome.runtime.openOptionsPage(); return; }
-  const embedBase = $("embed").value.trim();
-  const room = $("room").value.trim() || "default";
+  const embedBase = await activeSlideEmbed();   // 從目前作用中的 Slides 分頁自動取得
+  if (!embedBase) { $("warn").style.display = "block"; $("warn").textContent = "請在要直播的 Google Slides 分頁上開這個 popup 再按開始。"; return; }
   const pin = $("pin").value.trim();
-  if (!embedBase) { $("warn").style.display = "block"; $("warn").textContent = "請貼 embed 網址。"; return; }
 
-  const deckCfg = { cfUrl: sync.cfUrl, embedBase, room, pin };
+  const deckCfg = { cfUrl: sync.cfUrl, embedBase, room: "default", pin };
   await chrome.storage.local.set({ deckCfg, active: true });
   await chrome.runtime.sendMessage({ type: "start", cfg: deckCfg });
   setActive(true);

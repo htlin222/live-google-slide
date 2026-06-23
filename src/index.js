@@ -64,6 +64,7 @@ export class Room {
 
     // presenter 開講：設定 deck + pin，並通知在線 viewer
     if (isP && d.type === "init") {
+      console.log("init", JSON.stringify({ embedBase: String(d.embedBase || ""), hasPin: !!d.pin, viewers: this.viewers().length }));
       const deck = {
         pinHash: d.pin ? await this.sha(d.pin) : null,
         embedBase: String(d.embedBase || ""),
@@ -81,6 +82,7 @@ export class Room {
     // presenter 翻頁：只發給已驗證的 viewer
     if (isP && d.type === "slide") {
       const cur = { slideId: String(d.slideId ?? ""), index: Number.isInteger(d.index) ? d.index : null, ts: Date.now() };
+      console.log("slide-push", JSON.stringify({ slideId: cur.slideId, viewers: this.viewers().length }));
       await this.ctx.storage.put("current", cur);
       const msg = JSON.stringify({ type: "slide", ...cur });
       for (const v of this.viewers())    if (this.att(v).verified) { try { v.send(msg); } catch {} }

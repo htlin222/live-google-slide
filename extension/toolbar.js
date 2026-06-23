@@ -82,8 +82,6 @@
   authBox.append(authIco, authWho, signinB);
 
   const warn = h("div", { class: "lgs-warn" });
-  const embedI = h("textarea", { id: "lgs-embed", placeholder: "開著 Slides 分頁就會自動填好" });
-  const roomI = h("input", { id: "lgs-room", placeholder: "default" });
   const pinI = h("input", { id: "lgs-pin", maxlength: "8" });
   const genB = h("button", { class: "lgs-gen", textContent: "產生" });
   const startB = h("button", { class: "lgs-start", textContent: "開始直播" });
@@ -97,11 +95,9 @@
 
   const panel = h("div", { class: "lgs-panel", hidden: true },
     authBox, warn,
-    h("label", { textContent: "embed 網址（已自動帶入；deck 需設為知道連結者可檢視）" }), embedI,
-    h("div", { class: "lgs-row", style: "margin-top:4px" },
-      h("div", { style: "flex:1" }, h("label", { textContent: "房間 room" }), roomI),
-      h("div", { style: "flex:1" }, h("label", { textContent: "PIN" }),
-        h("div", { class: "lgs-row" }, pinI, genB))),
+    h("label", { textContent: "PIN（報給聽眾）" }),
+    h("div", { class: "lgs-row" }, pinI, genB),
+    h("div", { class: "lgs-hint", textContent: "embed 會自動用目前這份 deck；deck 需設為知道連結者可檢視。" }),
     h("div", { class: "lgs-row", style: "margin-top:14px" }, startB, stopB),
     statusBox, advToggle, adv);
 
@@ -110,8 +106,6 @@
     const sync = await chrome.storage.sync.get(["cfUrl"]);
     const local = await chrome.storage.local.get(["deckCfg", "active"]);
     const c = local.deckCfg || {};
-    embedI.value = c.embedBase || embedFromUrl(location.href);
-    roomI.value = c.room || "default";
     pinI.value = c.pin || genPin();
     cfI.value = sync.cfUrl || "";
     if (!sync.cfUrl) adv.hidden = false;
@@ -130,7 +124,7 @@
   function setActiveUI(active, pin) {
     startB.style.display = active ? "none" : "block";
     stopB.style.display = active ? "block" : "none";
-    [embedI, roomI, pinI, genB, cfI, signinB].forEach(n => (n.disabled = active));
+    [pinI, genB, cfI, signinB].forEach(n => (n.disabled = active));
     pill.classList.toggle("live", active);
     labelEl.textContent = active ? "Live · " + (pin || "") : "Live";
   }
@@ -142,7 +136,7 @@
     let connected = false;
     try { connected = (await chrome.runtime.sendMessage({ type: "status?" }))?.connected; } catch {}
     if (local.active) {
-      const view = (sync.cfUrl || "").replace(/\/$/, "") + "/view?room=" + (cfg.room || "");
+      const view = (sync.cfUrl || "").replace(/\/$/, "");
       setText(statusBox,
         connected ? "● 直播中" : "○ 連線中斷，重試中…", h("br"),
         "PIN：", h("span", { class: "lgs-pin", textContent: cfg.pin || "—" }), h("br"),
@@ -184,13 +178,13 @@
 
   startB.addEventListener("click", async () => {
     const cfUrl = cfI.value.trim();
-    const embedBase = embedI.value.trim();
-    const room = roomI.value.trim() || "default", pin = pinI.value.trim();
+    const embedBase = embedFromUrl(location.href);   // 直接用目前這份 deck（編輯頁網址）
+    const pin = pinI.value.trim();
     if (!cfUrl) { adv.hidden = false; warn.textContent = "請先填 CF 網址。"; return; }
-    if (!embedBase) { warn.textContent = "請貼 embed 網址。"; return; }
+    if (!embedBase) { warn.textContent = "請在 Google Slides 的簡報分頁開始。"; return; }
     warn.textContent = "";
     await chrome.storage.sync.set({ cfUrl });
-    const deckCfg = { cfUrl, embedBase, room, pin };
+    const deckCfg = { cfUrl, embedBase, room: "default", pin };
     await chrome.storage.local.set({ deckCfg, active: true });
     await chrome.runtime.sendMessage({ type: "start", cfg: deckCfg });
     setActiveUI(true, pin);
