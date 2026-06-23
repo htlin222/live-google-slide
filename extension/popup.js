@@ -1,5 +1,4 @@
 const $ = id => document.getElementById(id);
-const VIEW_HINT = u => u.replace(/\/$/, "") + "/view?room=";
 const genPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
 // 從 Google Slides 網址自動推出 embed 網址（免「發布到網路」手動複製）。
@@ -13,6 +12,12 @@ async function activeSlideEmbed() {
   try { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); return embedFromUrl(tab && tab.url); }
   catch { return ""; }
 }
+// PIN 持久化：固定一組，不會每次開 popup 就變（按「產生」才換）。
+async function loadPin() {
+  let { pin } = await chrome.storage.local.get("pin");
+  if (!pin) { pin = genPin(); await chrome.storage.local.set({ pin }); }
+  return pin;
+}
 
 async function init() {
   const sync = await chrome.storage.sync.get(["cfUrl"]);
@@ -21,7 +26,7 @@ async function init() {
   if (!sync.cfUrl) { $("warn").style.display = "block"; $("warn").textContent = "請先點右上 ⚙ 填你的 Cloudflare 網址。"; }
 
   const c = local.deckCfg || {};
-  $("pin").value = c.pin || genPin();
+  $("pin").value = c.pin || (await loadPin());
 
   setActive(local.active);
   refreshAuth();
@@ -60,7 +65,7 @@ async function refreshStatus() {
   }
 }
 
-$("gen").onclick = () => ($("pin").value = genPin());
+$("gen").onclick = async () => { const pin = genPin(); $("pin").value = pin; await chrome.storage.local.set({ pin }); };
 $("gear").onclick = () => chrome.runtime.openOptionsPage();
 
 $("signin").onclick = async () => {
@@ -75,6 +80,7 @@ $("start").onclick = async () => {
   const sync = await chrome.storage.sync.get(["cfUrl"]);
   if (!sync.cfUrl) { chrome.runtime.openOptionsPage(); return; }
   const pin = $("pin").value.trim();
+  await chrome.storage.local.set({ pin });
   const embedBase = await activeSlideEmbed();   // 若 popup 開在 Slides 分頁上就帶入；否則由該分頁的 content.js 補上
   $("warn").style.display = "none";
 

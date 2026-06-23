@@ -11,6 +11,11 @@
   if (document.getElementById("lgs-pill") || document.getElementById("lgs-style")) return; // 防重複注入
 
   const genPin = () => String(Math.floor(1000 + Math.random() * 9000));
+  async function loadPin() {
+    let { pin } = await chrome.storage.local.get("pin");
+    if (!pin) { pin = genPin(); await chrome.storage.local.set({ pin }); }
+    return pin;
+  }
 
   // 從目前 Slides 編輯頁網址自動推出 embed 網址（免手動「發布到網路」）。
   const embedFromUrl = u => {
@@ -106,7 +111,7 @@
     const sync = await chrome.storage.sync.get(["cfUrl"]);
     const local = await chrome.storage.local.get(["deckCfg", "active"]);
     const c = local.deckCfg || {};
-    pinI.value = c.pin || genPin();
+    pinI.value = c.pin || await loadPin();
     cfI.value = sync.cfUrl || "";
     if (!sync.cfUrl) adv.hidden = false;
     setActiveUI(!!local.active, c.pin);
@@ -164,7 +169,7 @@
   });
   window.addEventListener("resize", () => { if (!panel.hidden) positionPanel(); });
 
-  genB.addEventListener("click", () => (pinI.value = genPin()));
+  genB.addEventListener("click", async () => { const pin = genPin(); pinI.value = pin; await chrome.storage.local.set({ pin }); });
   advToggle.addEventListener("click", () => (adv.hidden = !adv.hidden));
 
   signinB.addEventListener("click", async () => {
@@ -184,7 +189,8 @@
     if (!embedBase) { warn.textContent = "請在 Google Slides 的簡報分頁開始。"; return; }
     warn.textContent = "";
     await chrome.storage.sync.set({ cfUrl });
-    const deckCfg = { cfUrl, embedBase, room: "default", pin };
+    await chrome.storage.local.set({ pin });
+    const deckCfg = { cfUrl, embedBase, pin };
     await chrome.storage.local.set({ deckCfg, active: true });
     await chrome.runtime.sendMessage({ type: "start", cfg: deckCfg });
     setActiveUI(true, pin);

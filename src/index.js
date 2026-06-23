@@ -25,11 +25,6 @@ export class Room {
       else if (await verifyAccessJwt(url.searchParams.get("cf_token") || "", this.env.ACCESS_TEAM_DOMAIN, this.env.ACCESS_AUD)) role = "presenter";
       // 驗不過 → 仍當 viewer；extension 收到 role!=="presenter" 會清掉 token 重新登入
     }
-    console.log("role-decision", JSON.stringify({
-      room: url.searchParams.get("room"), wantP, devOpen, role,
-      hasToken: !!url.searchParams.get("cf_token"),
-      presenters: this.presenters().length,
-    }));
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, [role]);
@@ -64,7 +59,6 @@ export class Room {
 
     // presenter 開講：設定 deck + pin，並通知在線 viewer
     if (isP && d.type === "init") {
-      console.log("init", JSON.stringify({ embedBase: String(d.embedBase || ""), hasPin: !!d.pin, viewers: this.viewers().length }));
       const deck = {
         pinHash: d.pin ? await this.sha(d.pin) : null,
         embedBase: String(d.embedBase || ""),
@@ -82,7 +76,6 @@ export class Room {
     // presenter 翻頁：只發給已驗證的 viewer
     if (isP && d.type === "slide") {
       const cur = { slideId: String(d.slideId ?? ""), index: Number.isInteger(d.index) ? d.index : null, ts: Date.now() };
-      console.log("slide-push", JSON.stringify({ slideId: cur.slideId, viewers: this.viewers().length }));
       await this.ctx.storage.put("current", cur);
       const msg = JSON.stringify({ type: "slide", ...cur });
       for (const v of this.viewers())    if (this.att(v).verified) { try { v.send(msg); } catch {} }
@@ -190,26 +183,25 @@ const b64urlStr = s => new TextDecoder().decode(b64urlBytes(s));
 
 // 驗 Cloudflare Access 的 application JWT：簽章（RS256/JWKS）＋ iss / aud / exp。
 async function verifyAccessJwt(token, teamDomain, aud) {
-  const no = (reason) => { console.log("jwt-reject", reason); return null; };
-  if (!token || !teamDomain || !aud) return no(`missing(tok=${!!token},team=${!!teamDomain},aud=${!!aud})`);
+  if (!token || !teamDomain || !aud) return null;
   const p = token.split(".");
-  if (p.length !== 3) return no("not-3-parts");
+  if (p.length !== 3) return null;
   let header, payload;
-  try { header = JSON.parse(b64urlStr(p[0])); payload = JSON.parse(b64urlStr(p[1])); } catch { return no("decode"); }
+  try { header = JSON.parse(b64urlStr(p[0])); payload = JSON.parse(b64urlStr(p[1])); } catch { return null; }
   const iss = "https://" + teamDomain;
-  if (payload.iss !== iss) return no(`iss(${payload.iss})`);
+  if (payload.iss !== iss) return null;
   const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  if (!auds.includes(aud)) return no(`aud(${JSON.stringify(auds)})`);
+  if (!auds.includes(aud)) return null;
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp && payload.exp < now) return no("expired");
-  if (payload.nbf && payload.nbf > now + 60) return no("nbf");
+  if (payload.exp && payload.exp < now) return null;
+  if (payload.nbf && payload.nbf > now + 60) return null;
   const jwk = (await getJwks(iss + "/cdn-cgi/access/certs")).find(k => k.kid === header.kid);
-  if (!jwk) return no(`no-jwk(kid=${header.kid})`);
+  if (!jwk) return null;
   try {
     const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
     const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64urlBytes(p[2]), new TextEncoder().encode(p[0] + "." + p[1]));
-    return ok ? payload : no("bad-sig");
-  } catch (e) { return no("verify-throw:" + e); }
+    return ok ? payload : null;
+  } catch { return null; }
 }
 
 // ───────────────────────── Viewer 頁（PIN → 才拿到 deck） ─────────────────────────
