@@ -35,6 +35,8 @@ async function refreshAuth() {
   try { signedIn = (await chrome.runtime.sendMessage({ type: "authState" }))?.signedIn; } catch {}
   $("auth").classList.toggle("in", !!signedIn);
   $("who").textContent = signedIn ? "已登入 CF Access" : "未登入 CF Access";
+  const { authErr } = await chrome.storage.local.get("authErr");
+  if (authErr) { $("warn").style.display = "block"; $("warn").textContent = "登入問題：" + authErr; }
 }
 
 function setActive(active) {
@@ -54,9 +56,9 @@ async function refreshStatus() {
       (connected ? "<span class='live'>● 直播中</span>" : "<span class='off'>○ 連線中斷，重試中…</span>") +
       "<br>PIN：<span class='pin'>" + (cfg.pin || "—") + "</span>" +
       "<br>觀眾開：<span class='view'>" + VIEW_HINT(sync.cfUrl || "") + (cfg.room || "") + "</span>" +
-      "<br>記得讓 Google 進入『放映』模式。";
+      "<br>編輯或放映模式翻頁都會同步。";
   } else {
-    $("status").textContent = "填好上面、進入放映後按「開始直播」。第一次會跳出 CF Access 登入。";
+    $("status").textContent = "按「開始直播」（第一次會跳 CF Access 登入）。之後在編輯或放映模式翻頁都會同步。";
   }
 }
 

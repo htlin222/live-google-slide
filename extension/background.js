@@ -10,6 +10,7 @@ let cfg = null;          // { cfUrl, embedBase, room, pin }
 let lastSlideId = null;
 let retry = 0;
 let reauthing = false;
+let connecting = false;
 
 function wsUrl(cfUrl, room, token) {
   const base = cfUrl.replace(/^http/, "ws").replace(/\/$/, "");
@@ -29,14 +30,26 @@ function jwtExp(t) {
 function tokenAlive(t) { return !!t && jwtExp(t) > Date.now() + 30000; }
 
 async function login(cfUrl, interactive) {
+  if (!chrome.identity || !chrome.identity.launchWebAuthFlow) {
+    console.error("[lgs] chrome.identity 不可用 — 外掛需重新載入以套用 identity 權限");
+    await chrome.storage.local.set({ authErr: "identity 權限未生效，請重新載入外掛" });
+    return null;
+  }
   const redirect = chrome.identity.getRedirectURL();
   const authUrl = cfUrl.replace(/\/$/, "") + "/present?ext_redirect=" + encodeURIComponent(redirect);
+  console.log("[lgs] login → launchWebAuthFlow", { authUrl, redirect, interactive });
   let out;
   try { out = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive }); }
-  catch { return null; }                                   // 使用者取消 / 沒有現成 session
+  catch (e) {                                              // 使用者取消 / 沒有現成 session / IdP 擋住
+    console.warn("[lgs] launchWebAuthFlow 失敗", String(e));
+    await chrome.storage.local.set({ authErr: String(e && e.message || e) });
+    return null;
+  }
+  console.log("[lgs] launchWebAuthFlow 回傳", out);
   const m = out && out.match(/[#?]token=([^&]+)/);
   const token = m ? decodeURIComponent(m[1]) : null;
-  if (token) await chrome.storage.local.set({ cfToken: token });
+  if (token) { await chrome.storage.local.set({ cfToken: token, authErr: "" }); console.log("[lgs] 取得 token，長度", token.length); }
+  else { await chrome.storage.local.set({ authErr: "回呼網址沒有 token：" + out }); console.warn("[lgs] 回呼沒有 token"); }
   return token;
 }
 
@@ -50,9 +63,14 @@ async function getToken(cfUrl, interactive) {
 // ── WebSocket ────────────────────────────────────────────
 async function connect(interactive = false) {
   if (!cfg) return;
-  const token = await getToken(cfg.cfUrl, interactive);
-  if (!token) { broadcastStatus(); return; }               // 沒登入就先不連，等下次 start / resume
-  try { if (ws) ws.close(); } catch {}
+  if (connecting) return;                                          // 正在連，避免重複觸發造成 churn
+  if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;  // 已連線/連線中
+  connecting = true;
+  let token;
+  try { token = await getToken(cfg.cfUrl, interactive); } finally { connecting = false; }
+  if (!token) { console.warn("[lgs] 沒有 token，暫不連線"); broadcastStatus(); return; }   // 沒登入就先不連
+  if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;  // 取 token 期間已有人連上
+  console.log("[lgs] 連線 WS", { room: cfg.room, url: cfg.cfUrl });
   ws = new WebSocket(wsUrl(cfg.cfUrl, cfg.room, token));
 
   ws.onopen = () => {
@@ -64,6 +82,7 @@ async function connect(interactive = false) {
   ws.onmessage = async (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
     // Worker 驗 token 失敗會把我們當 viewer → 清掉 token、彈視窗重新登入後重連
+    if (m.type === "role") console.log("[lgs] 伺服器判定角色 =", m.role);
     if (m.type === "role" && m.role !== "presenter" && !reauthing) {
       reauthing = true;
       try { ws.close(); } catch {}

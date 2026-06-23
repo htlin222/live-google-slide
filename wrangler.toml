@@ -21,6 +21,9 @@ ACCESS_AUD = "7726694704b3afe4598b00171c8da9eca07a912216cc506cbf57575dc4c065b2"
 name = "ROOM"
 class_name = "Room"
 
+[observability]
+enabled = true
+
 [[migrations]]
 tag = "v1"
 # 免費方案的 Durable Object 必須用 SQLite-backed storage

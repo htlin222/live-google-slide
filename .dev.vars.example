@@ -4,6 +4,9 @@
 # presenter 身分已改用 CF Access，本機 dev（localhost）會例外放行，
 # 所以這個檔通常不用填任何東西。
 #
+# 本機開發要免 CF Access、直接當 presenter：設這個（正式環境永遠不要設）。
+DEV_OPEN_PRESENTER=1
+
 # 若你想在本機就連到正式 Access（少見），可在這裡覆寫 [vars]：
 #   ACCESS_TEAM_DOMAIN = yourteam.cloudflareaccess.com
 #   ACCESS_AUD         = <Access application 的 Audience tag>

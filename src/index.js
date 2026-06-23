@@ -16,22 +16,27 @@ export class Room {
   async fetch(request) {
     const url = new URL(request.url);
     const wantP = url.searchParams.get("role") === "presenter";
-    // presenter 身分改由 CF Access JWT 驗證（不再用 PRESENT_KEY）。
-    // 本機 dev（localhost）前面沒有 Access 擋著，直接放行 presenter。
-    const isDev = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    // presenter 身分由 CF Access JWT 驗證（不再用 PRESENT_KEY）。
+    // 本機 dev：在 .dev.vars 設 DEV_OPEN_PRESENTER=1 即可免 token 當 presenter（正式環境不會有這個 var）。
+    const devOpen = this.env.DEV_OPEN_PRESENTER === "1";
     let role = "viewer";
     if (wantP) {
-      if (isDev) role = "presenter";
+      if (devOpen) role = "presenter";
       else if (await verifyAccessJwt(url.searchParams.get("cf_token") || "", this.env.ACCESS_TEAM_DOMAIN, this.env.ACCESS_AUD)) role = "presenter";
       // 驗不過 → 仍當 viewer；extension 收到 role!=="presenter" 會清掉 token 重新登入
     }
+    console.log("role-decision", JSON.stringify({
+      room: url.searchParams.get("room"), wantP, devOpen, role,
+      hasToken: !!url.searchParams.get("cf_token"),
+      presenters: this.presenters().length,
+    }));
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, [role]);
     try { server.send(JSON.stringify({ type: "role", role })); } catch {}
 
     if (role === "presenter") {
-      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.setAlarm(Date.now() + 10000);   // 啟動 keepalive ping 迴圈，撐住 MV3 service worker
       // 等 presenter 送 init（帶 pin/deck）後再決定怎麼對待 viewer
     } else {
       server.serializeAttachment({ verified: false, tries: 0 });
@@ -110,10 +115,15 @@ export class Room {
   }
 
   async alarm() {
-    if (this.presenters().length === 0) {
-      await this.ctx.storage.delete("current");
-      for (const v of this.viewers()) if (this.att(v).verified) { try { v.send(JSON.stringify({ type: "live", live: false })); } catch {} }
+    const ps = this.presenters();
+    if (ps.length > 0) {
+      // presenter 還在 → 每 10s 推一個 ping。外掛收到 WS 訊息會重置 MV3 service worker 的閒置計時器，避免被回收而斷線。
+      for (const p of ps) { try { p.send(JSON.stringify({ type: "ping" })); } catch {} }
+      await this.ctx.storage.setAlarm(Date.now() + 10000);
+      return;
     }
+    await this.ctx.storage.delete("current");
+    for (const v of this.viewers()) if (this.att(v).verified) { try { v.send(JSON.stringify({ type: "live", live: false })); } catch {} }
   }
 }
 
@@ -178,25 +188,26 @@ const b64urlStr = s => new TextDecoder().decode(b64urlBytes(s));
 
 // 驗 Cloudflare Access 的 application JWT：簽章（RS256/JWKS）＋ iss / aud / exp。
 async function verifyAccessJwt(token, teamDomain, aud) {
-  if (!token || !teamDomain || !aud) return null;
+  const no = (reason) => { console.log("jwt-reject", reason); return null; };
+  if (!token || !teamDomain || !aud) return no(`missing(tok=${!!token},team=${!!teamDomain},aud=${!!aud})`);
   const p = token.split(".");
-  if (p.length !== 3) return null;
+  if (p.length !== 3) return no("not-3-parts");
   let header, payload;
-  try { header = JSON.parse(b64urlStr(p[0])); payload = JSON.parse(b64urlStr(p[1])); } catch { return null; }
+  try { header = JSON.parse(b64urlStr(p[0])); payload = JSON.parse(b64urlStr(p[1])); } catch { return no("decode"); }
   const iss = "https://" + teamDomain;
-  if (payload.iss !== iss) return null;
+  if (payload.iss !== iss) return no(`iss(${payload.iss})`);
   const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  if (!auds.includes(aud)) return null;
+  if (!auds.includes(aud)) return no(`aud(${JSON.stringify(auds)})`);
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp && payload.exp < now) return null;
-  if (payload.nbf && payload.nbf > now + 60) return null;
+  if (payload.exp && payload.exp < now) return no("expired");
+  if (payload.nbf && payload.nbf > now + 60) return no("nbf");
   const jwk = (await getJwks(iss + "/cdn-cgi/access/certs")).find(k => k.kid === header.kid);
-  if (!jwk) return null;
+  if (!jwk) return no(`no-jwk(kid=${header.kid})`);
   try {
     const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
     const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64urlBytes(p[2]), new TextEncoder().encode(p[0] + "." + p[1]));
-    return ok ? payload : null;
-  } catch { return null; }
+    return ok ? payload : no("bad-sig");
+  } catch (e) { return no("verify-throw:" + e); }
 }
 
 // ───────────────────────── Viewer 頁（PIN → 才拿到 deck） ─────────────────────────

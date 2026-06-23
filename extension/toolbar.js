@@ -147,9 +147,9 @@
         connected ? "● 直播中" : "○ 連線中斷，重試中…", h("br"),
         "PIN：", h("span", { class: "lgs-pin", textContent: cfg.pin || "—" }), h("br"),
         h("small", { textContent: "觀眾開：" + view }), h("br"),
-        h("small", { textContent: "記得讓 Google 進入『放映』模式" }));
+        h("small", { textContent: "編輯或放映模式翻頁都會同步" }));
     } else {
-      setText(statusBox, h("small", { textContent: "填好上面、按「開始直播」（第一次會跳 CF Access 登入），再進入放映。" }));
+      setText(statusBox, h("small", { textContent: "按「開始直播」（第一次跳 CF Access 登入）；編輯/放映翻頁都會同步。" }));
     }
   }
 
