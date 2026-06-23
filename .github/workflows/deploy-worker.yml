@@ -1,0 +1,24 @@
+name: Deploy Worker
+
+# push 到 main（含 PR merge）且動到 Worker 相關檔案時觸發；也可手動執行
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "wrangler.toml"
+      - "package.json"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

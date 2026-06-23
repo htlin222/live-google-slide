@@ -85,3 +85,29 @@ slide-sync/
 ## License
 
 MIT — 見 [LICENSE](./LICENSE)。
+
+## 自動化（GitHub Actions）
+
+兩個 workflow 都在 push 到 `main` 時觸發——**PR merge 進 main 也算 push**，所以合併即生效。
+
+| Workflow | 觸發 | 動作 |
+| --- | --- | --- |
+| `deploy-worker.yml` | 改到 `src/**`、`wrangler.toml`、`package.json` | `wrangler deploy` 部署 Worker |
+| `release-extension.yml` | 改到 `extension/**` | 打包外掛 zip、自動 bump 版本、建立 GitHub Release |
+
+兩者也都支援手動執行（Actions 分頁 → Run workflow）。
+
+### 需要設定的 repo secrets
+
+`Settings → Secrets and variables → Actions`：
+
+- `CLOUDFLARE_API_TOKEN` — 在 Cloudflare 後台建立，套用「Edit Cloudflare Workers」範本。
+- `CLOUDFLARE_ACCOUNT_ID` — 你的帳號 ID（Workers 總覽頁右側可見）。
+
+`GITHUB_TOKEN` 由 Actions 自動提供，不用自己設。
+
+### 版本怎麼算
+
+外掛版本 = `manifest.json` 的 **major.minor** + 該次 **run 編號**當 patch（例如 `1.0.37`），每次發版自動遞增，**不會 commit 回 main**（避開分支保護與遞迴觸發）。要升 major/minor，手動改 `extension/manifest.json` 的前兩段即可。
+
+> `PRESENT_KEY` 是執行期 secret，仍用 `wrangler secret put PRESENT_KEY` 設定，**不經過 CI**。

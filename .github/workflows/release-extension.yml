@@ -1,0 +1,51 @@
+name: Release Extension
+
+# push 到 main（含 PR merge）且動到 extension/ 時自動發版；也可手動執行
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extension/**"
+      - ".github/workflows/release-extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 建立 tag 與 Release 需要
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 版本 = manifest 的 major.minor + 本次 run 編號當 patch（自動遞增，不需 commit 回 main）
+      - name: Compute version
+        id: v
+        run: |
+          BASE=$(node -p "require('./extension/manifest.json').version.split('.').slice(0,2).join('.')")
+          echo "version=${BASE}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp manifest version
+        run: |
+          node -e '
+            const fs=require("fs");
+            const m=JSON.parse(fs.readFileSync("extension/manifest.json"));
+            m.version="${{ steps.v.outputs.version }}";
+            fs.writeFileSync("extension/manifest.json", JSON.stringify(m,null,2)+"\n");
+          '
+
+      - name: Package extension
+        run: |
+          cd extension
+          zip -rq "../slide-sync-extension-v${{ steps.v.outputs.version }}.zip" .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: Extension v${{ steps.v.outputs.version }}
+          generate_release_notes: true
+          files: slide-sync-extension-v${{ steps.v.outputs.version }}.zip
