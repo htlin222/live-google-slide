@@ -1,5 +1,9 @@
 # live-google-slide
 
+![CI](../../actions/workflows/ci.yml/badge.svg) ![Deploy Worker](../../actions/workflows/deploy-worker.yml/badge.svg) ![Release Extension](../../actions/workflows/release-extension.yml/badge.svg) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+
+![architecture](./docs/architecture.svg)
+
 把你正在放映的 Google Slides，即時同步到任何一台裝置——跑在**你自己的 Cloudflare Worker** 上，用 **PIN** 控管誰能看。
 
 主控端是一個 Chrome 外掛，讀 Google **原生放映**的當前頁（所以你照常用全螢幕、走動、用筆標註）；觀眾打開你的網址、輸入 PIN，就看到你即時翻到的那一頁。
@@ -121,3 +125,11 @@ MIT — 見 [LICENSE](./LICENSE)。
 ### CHANGELOG → Release 說明
 
 把要寫進下次發版的條目放在 `CHANGELOG.md` 的 `## [Unreleased]` 底下。`release-extension.yml` 會擷取這一段當作 GitHub Release 的說明，後面再自動接上本次合併的 PR/commit 清單。
+
+## 社群
+
+- 參與貢獻：[CONTRIBUTING.md](./CONTRIBUTING.md)
+- 行為準則：[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- 安全政策與威脅模型：[SECURITY.md](./SECURITY.md)
+- 變更記錄：[CHANGELOG.md](./CHANGELOG.md)
+- 回報問題用 issue 範本；送 PR 會帶出 PR 範本。

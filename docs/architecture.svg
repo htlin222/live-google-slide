@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 440" font-family="-apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="940" height="440" rx="14" fill="#ffffff" stroke="#e4e4e7"/>
+  <text x="28" y="40" font-size="20" font-weight="700" fill="#18181b">live-google-slide</text>
+  <text x="28" y="62" font-size="13" fill="#71717a">原生放映的當前頁 → 你的 Cloudflare → 觀眾輸 PIN 看 live slide</text>
+
+  <!-- Presenter -->
+  <rect x="28" y="92" width="266" height="300" rx="12" fill="#eaf7ef" stroke="#2b6f4e"/>
+  <text x="48" y="122" font-size="15" font-weight="700" fill="#1c4d36">你的電腦（主控端）</text>
+  <text x="48" y="152" font-size="13" fill="#1f2937">Google Slides 原生放映</text>
+  <text x="48" y="174" font-size="12" fill="#4b5563">URL hash: #slide=id.gXXX</text>
+  <line x1="48" y1="192" x2="274" y2="192" stroke="#bfe3cd"/>
+  <text x="48" y="220" font-size="13" font-weight="600" fill="#1c4d36">Chrome 外掛 (MV3)</text>
+  <text x="48" y="242" font-size="12" fill="#4b5563">content.js 讀當前頁 + 心跳</text>
+  <text x="48" y="262" font-size="12" fill="#4b5563">background.js 持有 WebSocket</text>
+  <text x="48" y="300" font-size="12" fill="#4b5563">options：CF 網址 + 控制密碼</text>
+  <text x="48" y="320" font-size="12" fill="#4b5563">popup：embed 網址 + PIN</text>
+
+  <!-- Cloudflare -->
+  <rect x="337" y="92" width="266" height="300" rx="12" fill="#fff6e6" stroke="#d28b00"/>
+  <text x="357" y="122" font-size="15" font-weight="700" fill="#8a5a00">你的 Cloudflare</text>
+  <text x="357" y="152" font-size="13" fill="#1f2937">Worker（無狀態入口）</text>
+  <text x="357" y="180" font-size="13" font-weight="600" fill="#8a5a00">Durable Object＝1 場簡報</text>
+  <text x="357" y="202" font-size="12" fill="#4b5563">1 room = 1 instance</text>
+  <text x="357" y="222" font-size="12" fill="#4b5563">PIN 驗證（SHA-256，5 次鎖）</text>
+  <text x="357" y="242" font-size="12" fill="#4b5563">驗證後才下發 embed 網址</text>
+  <text x="357" y="262" font-size="12" fill="#4b5563">presenter 在線才 live</text>
+  <text x="357" y="282" font-size="12" fill="#4b5563">斷線 8s 寬限 → offline</text>
+  <text x="357" y="318" font-size="12" fill="#4b5563">Hibernatable WebSocket（閒置不計費）</text>
+
+  <!-- Viewer -->
+  <rect x="646" y="92" width="266" height="300" rx="12" fill="#eaf1fb" stroke="#2563c0"/>
+  <text x="666" y="122" font-size="15" font-weight="700" fill="#1d4ed8">任一台裝置（觀眾）</text>
+  <text x="666" y="152" font-size="13" fill="#1f2937">開 /view?room=…</text>
+  <text x="666" y="180" font-size="13" font-weight="600" fill="#1d4ed8">輸入 PIN</text>
+  <text x="666" y="202" font-size="12" fill="#4b5563">驗證後收到 embed + slideId</text>
+  <line x1="666" y1="220" x2="892" y2="220" stroke="#c7d8f4"/>
+  <text x="666" y="248" font-size="13" font-weight="600" fill="#1d4ed8">即時跟播</text>
+  <text x="666" y="270" font-size="12" fill="#4b5563">雙 iframe 預載 → 零閃爍</text>
+  <text x="666" y="290" font-size="12" fill="#4b5563">全螢幕 · 跟播/自由翻</text>
+
+  <!-- Arrows -->
+  <defs>
+    <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#52525b"/>
+    </marker>
+  </defs>
+  <line x1="294" y1="210" x2="335" y2="210" stroke="#52525b" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="297" y="200" font-size="10" fill="#52525b">WSS presenter</text>
+  <line x1="603" y1="210" x2="644" y2="210" stroke="#52525b" stroke-width="2" marker-end="url(#ah)"/>
+  <text x="606" y="200" font-size="10" fill="#52525b">WSS viewer</text>
+
+  <text x="28" y="424" font-size="11" fill="#a1a1aa">注意：deck 為「發布到網路」＝公開；PIN 擋進場、擋不了已進場者轉發。詳見 SECURITY.md</text>
+</svg>

@@ -1,0 +1,43 @@
+name: Bug 回報
+description: 回報一個問題
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 發生什麼事
+      description: 簡述問題，以及你預期的行為
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 重現步驟
+      placeholder: |
+        1. ...
+        2. ...
+        3. 看到 ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出問題的部分
+      options:
+        - Chrome 外掛（主控端）
+        - Worker / Durable Object
+        - Viewer 頁
+        - CI / 部署
+        - 不確定
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: 環境
+      placeholder: Chrome 版本、OS、wrangler 版本
+  - type: textarea
+    id: logs
+    attributes:
+      label: 主控台 / 錯誤訊息（若有）
+      render: shell

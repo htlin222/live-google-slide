@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全性問題
+    url: https://github.com/OWNER/live-google-slide/security/advisories/new
+    about: 請勿開公開 issue，改用私下回報（見 SECURITY.md）

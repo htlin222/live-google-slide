@@ -6,6 +6,10 @@
 把要寫進下一次 Release 的條目放在 `## [Unreleased]` 底下；CI 會把這一段帶進 GitHub Release 說明。
 
 ## [Unreleased]
+### Added
+- 社群健康檔：PR 範本、issue 範本（bug/功能）、CONTRIBUTING、CODE_OF_CONDUCT、SECURITY。
+- README 徽章與架構圖（docs/architecture.svg）。
+- Dependabot（npm + github-actions）與 .editorconfig。
 
 ## [1.0.0] - 2026-06-23
 ### Added
