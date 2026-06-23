@@ -40,11 +40,17 @@
 
   // ── 樣式（textContent 非 Trusted Types sink，安全）─────────────────────
   const style = h("style", { id: "lgs-style", textContent: `
-    .lgs-pill{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;margin-right:6px;
-      border:1px solid #c4c7c5;border-radius:16px;background:#fff;color:#3c4043;cursor:pointer;
-      font:500 13px/1 'Google Sans',system-ui,sans-serif;white-space:nowrap;user-select:none;vertical-align:middle}
-    .lgs-pill:hover{background:#f1f3f4}
-    .lgs-pill.live{border-color:#ea4335;color:#d93025;background:#fce8e6}
+    .lgs-pill{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+      height:40px;min-width:54px;box-sizing:border-box;padding:10px 16px;margin-right:-1px;z-index:1;
+      border:1px solid var(--gm3-sys-color-outline,#747775)!important;border-right:1px solid transparent!important;
+      border-radius:100px 0 0 100px;background:var(--gm3-sys-color-surface-container-low,#f8fafd);
+      color:var(--gm3-sys-color-on-surface-variant,#444746);cursor:pointer;box-shadow:none;outline:none;
+      font-family:'Google Sans',Roboto,RobotoDraft,Helvetica,Arial,sans-serif;font-weight:500;font-size:14px;
+      letter-spacing:.25px;line-height:16px;text-align:center;white-space:nowrap;user-select:none;vertical-align:middle}
+    .lgs-pill:hover{background:var(--gm3-sys-color-surface-container,#f0f4f9)}
+    .lgs-pill.live{border-color:#ea4335!important;color:#d93025;background:#fce8e6}
+    .lgs-present-group#punch-start-presentation-left,
+    .lgs-present-group #punch-start-presentation-left{border-radius:0!important}
     .lgs-dot{width:8px;height:8px;border-radius:50%;background:#9aa0a6;flex:none}
     .lgs-pill.live .lgs-dot{background:#ea4335}
     .lgs-caret{font-size:10px;opacity:.6}
@@ -57,7 +63,8 @@
       border:1px solid #dadce0;border-radius:8px;font-family:inherit}
     .lgs-panel textarea{height:48px;resize:vertical}
     .lgs-row{display:flex;gap:8px;align-items:center}.lgs-row input{flex:1}
-    .lgs-panel button{padding:9px 14px;border:0;border-radius:8px;font-size:13px;cursor:pointer}
+    .lgs-panel button{height:40px;box-sizing:border-box;padding:0 14px;border:0;border-radius:8px;font-size:13px;cursor:pointer;
+      display:inline-flex;align-items:center;justify-content:center}
     .lgs-start{background:#1a73e8;color:#fff;flex:1}.lgs-stop{background:#d93025;color:#fff;flex:1}
     .lgs-gen{background:#f1f3f4;color:#3c4043}
     .lgs-auth{display:flex;align-items:center;gap:8px;background:#f1f3f4;border-radius:8px;padding:8px 10px;font-size:12px;color:#5f6368}
@@ -209,14 +216,19 @@
   // ── 插進工具列（投影播放鈕左側），Slides 重繪時補回 ────────────────────
   const ANCHORS = ["#punch-start-presentation-container", "#punch-start-presentation-left", "#punch-start-presentation-menu-button"];
   function findAnchor() { for (const sel of ANCHORS) { const e = document.querySelector(sel); if (e) return e; } return null; }
+  function findTarget() {
+    const anchor = findAnchor();
+    if (!anchor) return null;
+    const target = anchor.closest("#punch-start-presentation-container") || anchor;
+    target.classList.add("lgs-present-group");
+    return target;
+  }
   function mount() {
     if (inPresent()) return;
     if (!style.isConnected) (document.head || document.documentElement).appendChild(style);
     if (!panel.isConnected) document.body.appendChild(panel);
-    if (pill.isConnected) return;
-    const anchor = findAnchor();
-    if (!anchor) return;
-    const target = anchor.closest("#punch-start-presentation-container") || anchor;
+    const target = findTarget();
+    if (!target || pill.isConnected) return;
     target.parentElement.insertBefore(pill, target);
   }
 
