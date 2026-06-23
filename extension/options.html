@@ -1,19 +1,35 @@
 <!doctype html>
 <html><head><meta charset="utf-8">
 <style>
-  body{font-family:system-ui;max-width:460px;margin:24px auto;padding:0 16px;color:#222}
-  h1{font-size:18px} label{display:block;margin:14px 0 4px;font-size:13px;color:#555}
-  input{width:100%;box-sizing:border-box;padding:10px;font-size:14px;border:1px solid #ccc;border-radius:8px}
-  button{margin-top:18px;padding:10px 20px;border:0;border-radius:8px;background:#2b6;color:#fff;font-size:14px;cursor:pointer}
-  #ok{color:#2a7;font-size:13px;margin-left:10px}
-  small{color:#888}
+  :root{--bg:#0e1525;--card:#162033;--line:#26324a;--txt:#e7ecf3;--mut:#93a1b8;--accent:#5b8cff;--accent-d:#3f6fe0;--ok:#34d399}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:40px auto;padding:0 18px;background:var(--bg);color:var(--txt)}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--mut);font-size:13px;margin:0 0 22px}
+  label{display:block;margin:18px 0 6px;font-size:13px;color:var(--mut)}
+  input{width:100%;padding:11px 12px;font-size:14px;color:var(--txt);background:var(--card);
+        border:1px solid var(--line);border-radius:10px}
+  input:focus{outline:0;border-color:var(--accent)}
+  .save{margin-top:22px;display:flex;align-items:center;gap:12px}
+  button{padding:10px 22px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+  button:hover{background:var(--accent-d)}
+  #ok{color:var(--ok);font-size:13px}
+  .note{margin-top:26px;padding:13px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;
+        color:var(--mut);font-size:12px;line-height:1.6}
+  .note b{color:var(--txt)}
 </style></head><body>
-  <h1>Slide Live Relay — 設定</h1>
+  <h1>Live Google Slide — 設定</h1>
+  <p class="sub">只填一次，之後每份簡報共用。</p>
+
   <label>Cloudflare 網址（你的 Worker，含 https://）</label>
   <input id="cfUrl" placeholder="https://live.my-domain.com">
-  <label>控制密碼（對應 Worker 的 PRESENT_KEY）</label>
-  <input id="key" type="password" placeholder="presenter key">
-  <div><button id="save">儲存</button><span id="ok"></span></div>
-  <p><small>這兩個值只填一次，之後每份簡報都用同一組。PIN 是每場開講時在 popup 設定的。</small></p>
+
+  <div class="save"><button id="save">儲存</button><span id="ok"></span></div>
+
+  <div class="note">
+    presenter 身分由 <b>Cloudflare Access</b> 把關——不用再設「控制密碼」。
+    第一次開直播時會跳出登入（Google／email），登入一次後會記住。
+    PIN 則是每場在 popup 設定、報給聽眾的。
+  </div>
   <script src="options.js"></script>
 </body></html>

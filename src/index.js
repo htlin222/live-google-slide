@@ -16,8 +16,15 @@ export class Room {
   async fetch(request) {
     const url = new URL(request.url);
     const wantP = url.searchParams.get("role") === "presenter";
-    const key = url.searchParams.get("key") || "";
-    const role = (wantP && this.env.PRESENT_KEY && key === this.env.PRESENT_KEY) ? "presenter" : "viewer";
+    // presenter 身分改由 CF Access JWT 驗證（不再用 PRESENT_KEY）。
+    // 本機 dev（localhost）前面沒有 Access 擋著，直接放行 presenter。
+    const isDev = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    let role = "viewer";
+    if (wantP) {
+      if (isDev) role = "presenter";
+      else if (await verifyAccessJwt(url.searchParams.get("cf_token") || "", this.env.ACCESS_TEAM_DOMAIN, this.env.ACCESS_AUD)) role = "presenter";
+      // 驗不過 → 仍當 viewer；extension 收到 role!=="presenter" 會清掉 token 重新登入
+    }
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, [role]);
@@ -119,57 +126,78 @@ export default {
       if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
       return env.ROOM.get(env.ROOM.idFromName(room)).fetch(request);
     }
-    if (url.pathname === "/present") return html(PRESENTER_HTML);
+    // /present 由 CF Access 擋在前面（cf-gate 設定）。能走到這裡＝已登入。
+    // 帶 ext_redirect（外掛的 launchWebAuthFlow）→ 把 Access JWT 交回外掛；否則顯示登入完成頁。
+    if (url.pathname === "/present") return presentBridge(request, url);
     if (url.pathname === "/view" || url.pathname === "/") return html(VIEWER_HTML);
     return new Response("not found", { status: 404 });
   },
 };
 function html(b) { return new Response(b, { headers: { "content-type": "text/html; charset=utf-8" } }); }
 
-// ───────────────────────── 每份簡報填這裡（只在 presenter 頁） ─────────────────────────
-const DECK = `
-  const EMBED_BASE = "https://docs.google.com/presentation/d/e/PASTE_PUBLISHED_ID/embed?start=false&loop=false&rm=minimal";
-  const SLIDE_IDS  = ["g_id_p", "g_id_2", "g_id_3"];
-`;
+// ───────────────────────── CF Access：登入橋接 + JWT 驗證 ─────────────────────────
+// 外掛用 chrome.identity.launchWebAuthFlow 開 /present?ext_redirect=<chromiumapp 網址>，
+// 在這裡（已過 Access）把 Cf-Access-Jwt-Assertion 以 #token=... 轉回外掛。
+function presentBridge(request, url) {
+  const isDev = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  const token = request.headers.get("Cf-Access-Jwt-Assertion") || (isDev ? "dev" : "");
+  const redirect = url.searchParams.get("ext_redirect");
+  if (redirect) {
+    let ok = false;
+    try { ok = new URL(redirect).hostname.endsWith(".chromiumapp.org"); } catch {}
+    if (!ok) return new Response("bad redirect", { status: 400 });
+    if (!token) return new Response("no access token", { status: 401 });
+    return Response.redirect(redirect + "#token=" + encodeURIComponent(token), 302);
+  }
+  return html(SIGNED_IN_HTML);
+}
 
-// ───────────────────────── Presenter 頁 ─────────────────────────
-const PRESENTER_HTML = `<!doctype html><html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Presenter</title>
-<style>
- html,body{margin:0;height:100%;background:#111;color:#eee;font-family:system-ui}
- #stage{height:80vh}iframe{width:100%;height:100%;border:0}
- #bar{height:20vh;display:flex;gap:12px;align-items:center;justify-content:center}
- button{font-size:20px;padding:14px 28px;border:0;border-radius:10px;background:#2b6;color:#fff}
- button:disabled{opacity:.4}#pos{font-size:18px;min-width:90px;text-align:center}
- #dot{position:fixed;top:10px;left:14px;font-size:13px;opacity:.85}
-</style></head><body>
-<div id="dot">connecting…</div>
-<div id="stage"><iframe id="f"></iframe></div>
-<div id="bar"><button id="prev">◀ Prev</button><span id="pos"></span><button id="next">Next ▶</button></div>
-<script>
-${DECK}
- const q=new URLSearchParams(location.search);
- const room=q.get("room")||"default", key=q.get("key")||"", pin=q.get("pin")||"";
- const f=document.getElementById("f"),pos=document.getElementById("pos"),dot=document.getElementById("dot");
- let i=0,ws;
- function slideUrl(id){ return EMBED_BASE+"#slide=id."+id; }
- function render(){ f.src=slideUrl(SLIDE_IDS[i]); pos.textContent=(i+1)+" / "+SLIDE_IDS.length;
-   document.getElementById("prev").disabled=i===0; document.getElementById("next").disabled=i===SLIDE_IDS.length-1; }
- function push(){ render(); if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:"slide",index:i,slideId:SLIDE_IDS[i]})); }
- function go(n){ i=Math.max(0,Math.min(SLIDE_IDS.length-1,i+n)); push(); }
- function connect(){
-   const proto=location.protocol==="https:"?"wss":"ws";
-   ws=new WebSocket(proto+"://"+location.host+"/ws?role=presenter&room="+encodeURIComponent(room)+"&key="+encodeURIComponent(key));
-   ws.onopen=()=>{ ws.send(JSON.stringify({type:"init",pin:pin,embedBase:EMBED_BASE,slideIds:SLIDE_IDS}));
-     dot.textContent="● 直播中"+(pin?"　PIN："+pin:"")+"（關掉分頁就結束）"; push(); };
-   ws.onmessage=e=>{const m=JSON.parse(e.data); if(m.type==="role"&&m.role!=="presenter") dot.textContent="○ read-only（控制密碼錯）";};
-   ws.onclose=()=>{dot.textContent="○ reconnecting…";setTimeout(connect,1500);};
- }
- document.getElementById("prev").onclick=()=>go(-1);
- document.getElementById("next").onclick=()=>go(1);
- addEventListener("keydown",e=>{ if(e.key==="ArrowRight"||e.key===" ")go(1); if(e.key==="ArrowLeft")go(-1); });
- render(); connect();
-</script></body></html>`;
+const SIGNED_IN_HTML = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signed in</title><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+background:#0b1220;color:#e7ecf3;font:16px/1.5 system-ui">
+<div style="text-align:center"><div style="font-size:40px">✓</div>已登入 CF Access<br>
+<small style="opacity:.6">可以關掉這個分頁了</small></div></body>`;
+
+// JWKS 快取（同一 isolate 內共用，1 小時）
+let JWKS_CACHE = { keys: null, exp: 0, url: "" };
+async function getJwks(certsUrl) {
+  if (JWKS_CACHE.keys && JWKS_CACHE.url === certsUrl && JWKS_CACHE.exp > Date.now()) return JWKS_CACHE.keys;
+  const r = await fetch(certsUrl);
+  if (!r.ok) return [];
+  const j = await r.json();
+  JWKS_CACHE = { keys: j.keys || [], exp: Date.now() + 3600_000, url: certsUrl };
+  return JWKS_CACHE.keys;
+}
+function b64urlBytes(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/"); s += "=".repeat((4 - s.length % 4) % 4);
+  const bin = atob(s), a = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  return a;
+}
+const b64urlStr = s => new TextDecoder().decode(b64urlBytes(s));
+
+// 驗 Cloudflare Access 的 application JWT：簽章（RS256/JWKS）＋ iss / aud / exp。
+async function verifyAccessJwt(token, teamDomain, aud) {
+  if (!token || !teamDomain || !aud) return null;
+  const p = token.split(".");
+  if (p.length !== 3) return null;
+  let header, payload;
+  try { header = JSON.parse(b64urlStr(p[0])); payload = JSON.parse(b64urlStr(p[1])); } catch { return null; }
+  const iss = "https://" + teamDomain;
+  if (payload.iss !== iss) return null;
+  const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!auds.includes(aud)) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp && payload.exp < now) return null;
+  if (payload.nbf && payload.nbf > now + 60) return null;
+  const jwk = (await getJwks(iss + "/cdn-cgi/access/certs")).find(k => k.kid === header.kid);
+  if (!jwk) return null;
+  try {
+    const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+    const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64urlBytes(p[2]), new TextEncoder().encode(p[0] + "." + p[1]));
+    return ok ? payload : null;
+  } catch { return null; }
+}
 
 // ───────────────────────── Viewer 頁（PIN → 才拿到 deck） ─────────────────────────
 const VIEWER_HTML = `<!doctype html><html><head>

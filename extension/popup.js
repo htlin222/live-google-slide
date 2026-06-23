@@ -1,30 +1,34 @@
 const $ = id => document.getElementById(id);
 const VIEW_HINT = u => u.replace(/\/$/, "") + "/view?room=";
-
-function genPin() { return String(Math.floor(1000 + Math.random() * 9000)); }
+const genPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
 async function init() {
-  const sync = await chrome.storage.sync.get(["cfUrl", "key"]);
+  const sync = await chrome.storage.sync.get(["cfUrl"]);
   const local = await chrome.storage.local.get(["deckCfg", "active"]);
 
-  if (!sync.cfUrl || !sync.key) {
-    $("warn").style.display = "block";
-    $("warn").textContent = "請先到「設定」填 CF 網址與控制密碼。";
-  }
+  if (!sync.cfUrl) { $("warn").style.display = "block"; $("warn").textContent = "請先點右上 ⚙ 填你的 Cloudflare 網址。"; }
 
   const c = local.deckCfg || {};
   $("embed").value = c.embedBase || "";
   $("room").value = c.room || "talk";
   $("pin").value = c.pin || genPin();
 
-  setActive(local.active, sync.cfUrl);
+  setActive(local.active);
+  refreshAuth();
   refreshStatus();
 }
 
-function setActive(active, cfUrl) {
+async function refreshAuth() {
+  let signedIn = false;
+  try { signedIn = (await chrome.runtime.sendMessage({ type: "authState" }))?.signedIn; } catch {}
+  $("auth").classList.toggle("in", !!signedIn);
+  $("who").textContent = signedIn ? "已登入 CF Access" : "未登入 CF Access";
+}
+
+function setActive(active) {
   $("start").style.display = active ? "none" : "block";
   $("stop").style.display = active ? "block" : "none";
-  ["embed", "room", "pin", "gen"].forEach(id => $(id).disabled = !!active);
+  ["embed", "room", "pin", "gen", "signin"].forEach(id => $(id).disabled = !!active);
 }
 
 async function refreshStatus() {
@@ -35,31 +39,39 @@ async function refreshStatus() {
   const cfg = local.deckCfg || {};
   if (local.active) {
     $("status").innerHTML =
-      (connected ? "● 連線中" : "○ 連線中斷，重試中…") +
-      "<br>PIN：<span class='pin'>" + (cfg.pin || "") + "</span>" +
-      "<br><small>觀眾開：" + VIEW_HINT(sync.cfUrl || "") + (cfg.room || "") + "</small>" +
-      "<br><small>記得讓 Google 進入『放映』模式</small>";
+      (connected ? "<span class='live'>● 直播中</span>" : "<span class='off'>○ 連線中斷，重試中…</span>") +
+      "<br>PIN：<span class='pin'>" + (cfg.pin || "—") + "</span>" +
+      "<br>觀眾開：<span class='view'>" + VIEW_HINT(sync.cfUrl || "") + (cfg.room || "") + "</span>" +
+      "<br>記得讓 Google 進入『放映』模式。";
   } else {
-    $("status").innerHTML = "<small>填好上面、進入放映後按「開始直播」。</small>";
+    $("status").textContent = "填好上面、進入放映後按「開始直播」。第一次會跳出 CF Access 登入。";
   }
 }
 
 $("gen").onclick = () => ($("pin").value = genPin());
-$("opt").onclick = () => chrome.runtime.openOptionsPage();
+$("gear").onclick = () => chrome.runtime.openOptionsPage();
+
+$("signin").onclick = async () => {
+  const { cfUrl } = await chrome.storage.sync.get(["cfUrl"]);
+  if (!cfUrl) { chrome.runtime.openOptionsPage(); return; }
+  $("who").textContent = "登入中…";
+  try { await chrome.runtime.sendMessage({ type: "signin", cfUrl }); } catch {}
+  refreshAuth();
+};
 
 $("start").onclick = async () => {
-  const sync = await chrome.storage.sync.get(["cfUrl", "key"]);
-  if (!sync.cfUrl || !sync.key) { chrome.runtime.openOptionsPage(); return; }
+  const sync = await chrome.storage.sync.get(["cfUrl"]);
+  if (!sync.cfUrl) { chrome.runtime.openOptionsPage(); return; }
   const embedBase = $("embed").value.trim();
-  const room = ($("room").value.trim() || "talk");
+  const room = $("room").value.trim() || "talk";
   const pin = $("pin").value.trim();
   if (!embedBase) { $("warn").style.display = "block"; $("warn").textContent = "請貼 embed 網址。"; return; }
 
-  const deckCfg = { cfUrl: sync.cfUrl, key: sync.key, embedBase, room, pin };
+  const deckCfg = { cfUrl: sync.cfUrl, embedBase, room, pin };
   await chrome.storage.local.set({ deckCfg, active: true });
   await chrome.runtime.sendMessage({ type: "start", cfg: deckCfg });
   setActive(true);
-  setTimeout(refreshStatus, 400);
+  setTimeout(() => { refreshAuth(); refreshStatus(); }, 600);
 };
 
 $("stop").onclick = async () => {
@@ -69,5 +81,5 @@ $("stop").onclick = async () => {
   refreshStatus();
 };
 
-chrome.runtime.onMessage.addListener(m => { if (m.type === "status") refreshStatus(); });
+chrome.runtime.onMessage.addListener(m => { if (m.type === "status") { refreshStatus(); refreshAuth(); } });
 init();

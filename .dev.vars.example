@@ -1,8 +1,9 @@
-# 本機開發用：複製這個檔成 .dev.vars（已被 .gitignore 忽略），填上你的值。
+# 本機開發用：複製這個檔成 .dev.vars（已被 .gitignore 忽略）。
 # `wrangler dev` 會自動讀取 .dev.vars。
 #
-# 正式環境不要用這個檔，改用：
-#   npx wrangler secret put PRESENT_KEY
+# presenter 身分已改用 CF Access，本機 dev（localhost）會例外放行，
+# 所以這個檔通常不用填任何東西。
 #
-# PRESENT_KEY = presenter 控制密碼（決定誰能當主控端，不是給聽眾的 PIN）
-PRESENT_KEY=change-me
+# 若你想在本機就連到正式 Access（少見），可在這裡覆寫 [vars]：
+#   ACCESS_TEAM_DOMAIN = yourteam.cloudflareaccess.com
+#   ACCESS_AUD         = <Access application 的 Audience tag>

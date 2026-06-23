@@ -3,7 +3,7 @@
   "name": "Live Google Slide",
   "version": "1.0.0",
   "description": "讀 Google 原生放映的當前頁，relay 到你的 Cloudflare，觀眾輸 PIN 看 live slide。",
-  "permissions": ["storage", "tabs", "alarms"],
+  "permissions": ["storage", "tabs", "alarms", "identity"],
   "host_permissions": [
     "*://docs.google.com/*",
     "https://*/*"

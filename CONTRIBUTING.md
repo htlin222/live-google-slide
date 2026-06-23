@@ -5,19 +5,18 @@
 ## 開發環境
 
 ```bash
-npm install
-cp .dev.vars.example .dev.vars   # 填入 PRESENT_KEY，不要 commit
-npm run dev                      # 本機跑 Worker（wrangler dev）
+make install                     # = pnpm install
+make dev                         # 本機跑 Worker（wrangler dev）；localhost 會自動放行 presenter
 ```
 
-外掛部分：`chrome://extensions` → 開發人員模式 →「載入未封裝項目」→ 選 `extension/`。改完按重新整理即可。
+presenter 身分由 CF Access 把關，本機 dev 無需設定。外掛部分：`make load` 直接開乾淨 Chrome 載入未封裝外掛，或 `chrome://extensions` → 開發人員模式 →「載入未封裝項目」→ 選 `extension/`。改完按重新整理即可。
 
 ## 送 PR 前
 
 - `npx wrangler deploy --dry-run` 要能通過（CI 也會跑這個）。
 - 動到外掛就在 Chrome 實測過一輪放映 → 觀眾跟播。
 - 使用者可感知的變更，請在 `CHANGELOG.md` 的 `## [Unreleased]` 補一行。
-- 別把任何 secret（`PRESENT_KEY`、Cloudflare token）寫進程式或提交。
+- 別把任何 secret（Cloudflare token 等）寫進程式或提交。（presenter 已改用 CF Access，無共用密碼。）
 
 ## 版本與發布
 

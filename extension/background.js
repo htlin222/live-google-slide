@@ -1,14 +1,19 @@
 // Background service worker：唯一持有對 Cloudflare 的 WebSocket。
 // 不在 content script 開 WS，以避開 Google 頁面的 CSP 限制。
+//
+// presenter 身分改用 CF Access：靠 chrome.identity.launchWebAuthFlow 開
+// <cfUrl>/present 登入（Google/email，一次），Worker 把 Access JWT 以 #token=
+// 轉回外掛；WS 帶 ?cf_token=<JWT> 連線，Worker 端驗 JWT 才給 presenter。
 
 let ws = null;
-let cfg = null;          // { cfUrl, key, embedBase, room, pin }
+let cfg = null;          // { cfUrl, embedBase, room, pin }
 let lastSlideId = null;
 let retry = 0;
+let reauthing = false;
 
-function wsUrl(cfUrl, room, key) {
+function wsUrl(cfUrl, room, token) {
   const base = cfUrl.replace(/^http/, "ws").replace(/\/$/, "");
-  return base + "/ws?role=presenter&room=" + encodeURIComponent(room) + "&key=" + encodeURIComponent(key);
+  return base + "/ws?role=presenter&room=" + encodeURIComponent(room) + "&cf_token=" + encodeURIComponent(token);
 }
 
 function broadcastStatus() {
@@ -16,10 +21,39 @@ function broadcastStatus() {
   chrome.runtime.sendMessage({ type: "status", connected }).catch(() => {});
 }
 
-function connect() {
+// ── CF Access 登入 ────────────────────────────────────────
+function jwtExp(t) {
+  try { return (JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).exp || 0) * 1000; }
+  catch { return t === "dev" ? Date.now() + 3.6e6 : 0; }   // dev token 視為短期有效
+}
+function tokenAlive(t) { return !!t && jwtExp(t) > Date.now() + 30000; }
+
+async function login(cfUrl, interactive) {
+  const redirect = chrome.identity.getRedirectURL();
+  const authUrl = cfUrl.replace(/\/$/, "") + "/present?ext_redirect=" + encodeURIComponent(redirect);
+  let out;
+  try { out = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive }); }
+  catch { return null; }                                   // 使用者取消 / 沒有現成 session
+  const m = out && out.match(/[#?]token=([^&]+)/);
+  const token = m ? decodeURIComponent(m[1]) : null;
+  if (token) await chrome.storage.local.set({ cfToken: token });
+  return token;
+}
+
+// 先用快取的 token；過期或沒有就走登入（interactive 決定要不要彈視窗）
+async function getToken(cfUrl, interactive) {
+  const { cfToken } = await chrome.storage.local.get("cfToken");
+  if (tokenAlive(cfToken)) return cfToken;
+  return login(cfUrl, interactive);
+}
+
+// ── WebSocket ────────────────────────────────────────────
+async function connect(interactive = false) {
   if (!cfg) return;
+  const token = await getToken(cfg.cfUrl, interactive);
+  if (!token) { broadcastStatus(); return; }               // 沒登入就先不連，等下次 start / resume
   try { if (ws) ws.close(); } catch {}
-  ws = new WebSocket(wsUrl(cfg.cfUrl, cfg.room, cfg.key));
+  ws = new WebSocket(wsUrl(cfg.cfUrl, cfg.room, token));
 
   ws.onopen = () => {
     retry = 0;
@@ -27,7 +61,19 @@ function connect() {
     if (lastSlideId) ws.send(JSON.stringify({ type: "slide", slideId: lastSlideId }));
     broadcastStatus();
   };
-  ws.onclose = () => { ws = null; broadcastStatus(); if (cfg) setTimeout(connect, Math.min(1500 * (++retry), 8000)); };
+  ws.onmessage = async (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    // Worker 驗 token 失敗會把我們當 viewer → 清掉 token、彈視窗重新登入後重連
+    if (m.type === "role" && m.role !== "presenter" && !reauthing) {
+      reauthing = true;
+      try { ws.close(); } catch {}
+      await chrome.storage.local.remove("cfToken");
+      const t = await login(cfg.cfUrl, true);
+      reauthing = false;
+      if (t) connect(false);
+    }
+  };
+  ws.onclose = () => { ws = null; broadcastStatus(); if (cfg && !reauthing) setTimeout(() => connect(false), Math.min(1500 * (++retry), 8000)); };
   ws.onerror = () => { try { ws.close(); } catch {} };
 }
 
@@ -38,7 +84,7 @@ function sendSlide(id) {
 
 async function resume() {
   const { deckCfg, active } = await chrome.storage.local.get(["deckCfg", "active"]);
-  if (active && deckCfg) { cfg = deckCfg; if (!ws) connect(); }
+  if (active && deckCfg) { cfg = deckCfg; if (!ws) connect(false); }   // 自動重連只用快取 token，不彈視窗
 }
 
 function stop() {
@@ -48,12 +94,14 @@ function stop() {
   broadcastStatus();
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   switch (msg.type) {
-    case "start": cfg = msg.cfg; lastSlideId = null; connect(); break;
+    case "start": cfg = msg.cfg; lastSlideId = null; connect(true); break;   // 使用者按開始 → 允許彈登入視窗
     case "stop": stop(); break;
     case "slide": sendSlide(msg.slideId); break;
     case "resume": resume(); break;
+    case "signin": login(msg.cfUrl, true).then(t => reply({ ok: !!t })); return true;
+    case "authState": chrome.storage.local.get("cfToken").then(g => reply({ signedIn: tokenAlive(g.cfToken) })); return true;
     case "hb": /* keepalive，喚醒 SW 即可 */ break;
     case "status?": reply({ connected: !!ws && ws.readyState === 1 }); return true;
   }

@@ -16,6 +16,6 @@
 
 ## 良好實務
 
-- `PRESENT_KEY` 與 Cloudflare token 一律用 secret 管理，切勿提交。
+- presenter 身分由 Cloudflare Access 把關（無共用密碼）；Cloudflare API token 一律用 secret 管理，切勿提交。
 - 每場簡報使用不同的 PIN。
 - 敏感簡報請勿使用「發布到網路」模式。

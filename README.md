@@ -12,10 +12,10 @@
 [你的電腦]
   Google 原生放映 (…/present#slide=id.gXXX)
   Chrome 外掛: content script 讀 hash → background 推 slideId
-        │  WSS  role=presenter (+控制密碼)
+        │  先過 CF Access 登入拿 JWT，WSS  role=presenter (+cf_token)
         ▼
-[你的 Cloudflare]  Worker + Durable Object
-  驗 PIN 後才把 embed 網址 + slideId 發給觀眾
+[你的 Cloudflare]  Worker + Durable Object（/present 由 CF Access 把關）
+  驗 Access JWT → presenter；驗 PIN 後才把 embed 網址 + slideId 發給觀眾
         ▼
 [任一台裝置]  https://你的網址/view?room=xxx → 輸 PIN → 看 live slide
 ```
@@ -29,27 +29,28 @@
 需要 Node.js 與一個 Cloudflare 帳號。
 
 ```bash
-npm install
+make install             # = pnpm install
 npx wrangler login
-npm run deploy           # 預設部署到 *.workers.dev
-npm run secret           # 設定 PRESENT_KEY（主控端控制密碼）
+make deploy              # = wrangler deploy（預設部署到 *.workers.dev）
 ```
 
-要綁自訂網域（例如 `live.my-domain.com`）：先把該網域接進 Cloudflare，再到 `wrangler.toml` 取消 `routes` 註解、改成你的網域，重新 `npm run deploy`。
+要綁自訂網域（例如 `live.my-domain.com`）：先把該網域接進 Cloudflare，再到 `wrangler.toml` 改 `routes` 成你的網域，重新 `make deploy`。
 
-本機開發：把 `.dev.vars.example` 複製成 `.dev.vars`、填 `PRESENT_KEY`，然後 `npm run dev`。
+**presenter 端用 CF Access 把關**（取代舊的 `PRESENT_KEY`）：用 Claude 的 `cf-gate` 技能把 `你的網址/present` 放到 Cloudflare Access 後面、只允許你的 email（`make gate` 有提示）。設好後把 team 網域與 application AUD 填進 `wrangler.toml` 的 `[vars]`（`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`），再 `make deploy`。這兩個值是公開設定、非機密。
+
+本機開發：`make dev`（localhost 會自動放行 presenter，免設定）。
 
 ## 二、安裝 Chrome 外掛（一次）
 
-1. `chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選 `extension/` 資料夾。
-2. 點外掛 →「設定」→ 填你的 Worker 網址（含 `https://`）和 `PRESENT_KEY`，儲存。
+1. `make load` 開一個乾淨的 Chrome 直接載入未封裝外掛；或手動 `chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選 `extension/` 資料夾。
+2. 點外掛右上 ⚙ →填你的 Worker 網址（含 `https://`），儲存。**不用填密碼**——presenter 身分由 CF Access 負責。
 
 ## 三、每份簡報的流程
 
 1. 該份簡報：`檔案 → 共用 → 發布到網路 → 嵌入`，複製 embed 網址。
 2. 點外掛 popup：貼 embed 網址、設房間名、按「產生」給 PIN。
 3. Google Slides 按**原生放映**。
-4. 回 popup 按「開始直播」，把 PIN 報給聽眾。
+4. 回 popup 按「開始直播」；**第一次**會跳出 CF Access 登入（Google／email，之後記住），登入後即連線。把 PIN 報給聽眾。
 5. 聽眾開 `https://你的網址/view?room=房間名` → 輸 PIN → 跟著你翻頁。
    觀眾端支援全螢幕（按鈕 / `f` / 雙擊）。
 
@@ -57,7 +58,7 @@ npm run secret           # 設定 PRESENT_KEY（主控端控制密碼）
 
 ## 安全模型（請務必理解）
 
-- `PRESENT_KEY`（控制密碼）= 決定**誰能當主控端**，存成 Cloudflare secret。
+- **CF Access**（presenter）= 決定**誰能當主控端**。`/present` 被 Cloudflare Access 擋著，外掛登入後拿到 Access **JWT**，連 WebSocket 時帶上；Worker 用 Cloudflare 的公鑰（JWKS）驗簽章 + `aud` + `exp` 才給 presenter 角色。沒有任何共用密碼存在本機或 CI。
 - `PIN` = 決定**誰能看**，每場可不同；以 SHA-256 雜湊存於 Durable Object，錯 5 次鎖定。
 - 驗證一律在伺服器端（Durable Object）；deck 的 embed 網址要**驗 PIN 後才下發**，所以沒 PIN 的人連 Google 的網址都拿不到。
 
@@ -73,20 +74,21 @@ npm run secret           # 設定 PRESENT_KEY（主控端控制密碼）
 
 ```
 live-google-slide/
-├─ src/index.js          Worker + Durable Object（relay、PIN、live/offline）
+├─ src/index.js          Worker + Durable Object（relay、CF Access JWT 驗證、PIN、live/offline）
 ├─ extension/            Chrome 外掛（MV3）
 │  ├─ manifest.json
-│  ├─ background.js      唯一持有對 CF 的 WebSocket（避開頁面 CSP）
+│  ├─ background.js      CF Access 登入（launchWebAuthFlow）+ 唯一持有對 CF 的 WebSocket
 │  ├─ content.js         讀放映當前頁 + 心跳保活
+│  ├─ toolbar.js         Slides 編輯頁工具列的就地面板
 │  ├─ popup.* / options.*
 ├─ .github/workflows/   CI（PR dry-run）、Worker 部署、外掛發版
+├─ Makefile             build / load / dev / deploy / gate 快捷
 ├─ CHANGELOG.md
-├─ wrangler.toml
-├─ .dev.vars.example     本機 secret 範本（複製成 .dev.vars）
+├─ wrangler.toml        含 [vars] ACCESS_TEAM_DOMAIN / ACCESS_AUD
 └─ package.json
 ```
 
-`src/index.js` 另含一個 `/present` 純網頁主控端，作為「不裝外掛」的後備（需在檔內手填 deck 常數）。日常用外掛即可。
+`/present` 是 CF Access 的登入橋接點：外掛開它登入、Worker 把 Access JWT 轉回外掛。直接用瀏覽器開（已登入）會看到「已登入」頁。
 
 ## License
 
@@ -116,7 +118,7 @@ MIT — 見 [LICENSE](./LICENSE)。
 
 外掛版本 = `manifest.json` 的 **major.minor** + 該次 **run 編號**當 patch（例如 `1.0.37`），每次發版自動遞增，**不會 commit 回 main**（避開分支保護與遞迴觸發）。要升 major/minor，手動改 `extension/manifest.json` 的前兩段即可。
 
-> `PRESENT_KEY` 是執行期 secret，仍用 `wrangler secret put PRESENT_KEY` 設定，**不經過 CI**。
+> presenter 身分由 **CF Access** 把關：用 `cf-gate` 保護 `/present` 後，把 `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` 填進 `wrangler.toml` 的 `[vars]`（公開設定、非機密，會隨 `make deploy` 一起上）。已無任何執行期 secret。
 
 ### Pull Request 檢查（不部署）
 
