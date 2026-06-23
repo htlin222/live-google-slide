@@ -25,7 +25,8 @@ function tick() {
 
 window.addEventListener("hashchange", tick);
 window.addEventListener("popstate", tick);
-setInterval(tick, 500);
+// 編輯模式翻頁是 pushState（不會觸發事件），所以靠較密的輪詢補捉，降低延遲。
+setInterval(tick, 150);
 
 // 心跳：分頁開著就每 20 秒戳一下 background，避免 MV3 service worker 被回收
 //（伺服器端也會每 10 秒 ping 保活，雙保險）。

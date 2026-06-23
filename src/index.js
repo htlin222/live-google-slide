@@ -205,20 +205,21 @@ async function verifyAccessJwt(token, teamDomain, aud) {
 }
 
 // ───────────────────────── Viewer 頁（PIN → 才拿到 deck） ─────────────────────────
+// 觀眾只「跟播」：不能自己翻頁，iframe 用 pointer-events:none 擋掉 Google embed 自帶的點擊翻頁。
 const VIEWER_HTML = `<!doctype html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Live</title>
 <style>
  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui;color:#ccc}
- .frame{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:0}.frame.show{opacity:1}
+ .frame{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:0;pointer-events:none}.frame.show{opacity:1}
  .screen{position:fixed;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:#000;z-index:5}
  .hidden{display:none}
  input{font-size:28px;letter-spacing:8px;text-align:center;width:200px;padding:12px;border-radius:10px;border:0;background:#222;color:#fff}
  .screen button{font-size:18px;padding:12px 26px;border:0;border-radius:10px;background:#2b6;color:#fff}
  #err{color:#e66;font-size:14px;min-height:18px}
- #ui{position:fixed;top:0;left:0;right:0;display:flex;gap:10px;align-items:center;z-index:6;
-     padding:8px 12px;color:#fff;font-size:13px;background:linear-gradient(#000a,#0000);opacity:0;transition:opacity .25s}
- body:hover #ui{opacity:1}#ui button{font-size:13px;padding:7px 12px;border:0;border-radius:8px;background:#fff2;color:#fff;cursor:pointer}
- #ui button.on{background:#2b6}#dot{margin-left:auto;opacity:.8}#nav{display:none;gap:8px}#nav.free{display:flex}
+ #ui{position:fixed;top:0;right:0;display:flex;gap:10px;align-items:center;z-index:6;
+     padding:8px 12px;color:#fff;font-size:13px;opacity:0;transition:opacity .25s}
+ body:hover #ui{opacity:1}#ui button{font-size:13px;padding:7px 12px;border:0;border-radius:8px;background:#fff3;color:#fff;cursor:pointer}
+ #dot{opacity:.8}
 </style></head><body>
 <iframe id="a" class="frame"></iframe><iframe id="b" class="frame"></iframe>
 
@@ -230,41 +231,32 @@ const VIEWER_HTML = `<!doctype html><html><head>
 <div id="waitScreen" class="screen">演講尚未開始</div>
 
 <div id="ui" class="hidden">
- <button id="mode" class="on">跟播</button>
- <span id="nav"><button id="prev">◀</button><button id="next">▶</button><button id="resync">回到 live</button></span>
- <button id="fs">⛶ 全螢幕</button><span id="dot">connecting…</span>
+ <span id="dot">connecting…</span><button id="fs">⛶ 全螢幕</button>
 </div>
 <script>
  const room=new URLSearchParams(location.search).get("room")||"default";
  let A=document.getElementById("a"),B=document.getElementById("b");
- let EMBED_BASE=null,SLIDE_IDS=[],curId=null,liveId=null,follow=true,localIdx=0,isLive=false,ready=false,ws;
+ let EMBED_BASE=null,curId=null,liveId=null,isLive=false,ready=false,ws;
  const pinScreen=document.getElementById("pinScreen"),waitScreen=document.getElementById("waitScreen"),
        ui=document.getElementById("ui"),err=document.getElementById("err"),dot=document.getElementById("dot"),
-       nav=document.getElementById("nav"),modeBtn=document.getElementById("mode"),pinInput=document.getElementById("pinInput");
+       pinInput=document.getElementById("pinInput");
 
  function slideUrl(id){ return EMBED_BASE+"#slide=id."+id; }
  function showScreen(s){ pinScreen.classList.toggle("hidden",s!=="pin"); waitScreen.classList.toggle("hidden",s!=="wait");
    ui.classList.toggle("hidden",s!=="live"); if(s==="pin")pinInput.focus(); }
- function show(id){ if(!ready||!isLive)return; if(id===curId)return; curId=id;
-   B.onload=()=>{ setTimeout(()=>{ B.classList.add("show"); A.classList.remove("show"); const t=A;A=B;B=t; },60); };
+ // 預載到隱藏的 B，載好立刻換上，避免白閃；觀眾永遠跟著 presenter。
+ function show(id){ if(!ready||!isLive||!EMBED_BASE||id===curId)return; curId=id;
+   B.onload=()=>{ B.classList.add("show"); A.classList.remove("show"); const t=A;A=B;B=t; };
    B.classList.remove("show"); B.src=slideUrl(id); }
  function setLive(v){ isLive=v; if(!ready)return;
-   if(v){ showScreen("live"); if(follow&&liveId)show(liveId); }
-   else { A.classList.remove("show"); B.classList.remove("show"); curId=null; setMode(true); showScreen("wait"); } }
- function setMode(f){ follow=f; modeBtn.classList.toggle("on",f); modeBtn.textContent=f?"跟播":"自由翻";
-   nav.classList.toggle("free",!f); if(f&&liveId)show(liveId); }
- function localGo(n){ if(!isLive)return; localIdx=Math.max(0,Math.min(SLIDE_IDS.length-1,localIdx+n)); show(SLIDE_IDS[localIdx]); }
+   if(v){ showScreen("live"); if(liveId)show(liveId); }
+   else { A.classList.remove("show"); B.classList.remove("show"); curId=null; showScreen("wait"); } }
 
  document.getElementById("pinGo").onclick=sendPin;
  pinInput.addEventListener("keydown",e=>{ if(e.key==="Enter")sendPin(); });
  function sendPin(){ const p=pinInput.value.trim(); if(!p)return; err.textContent=""; ws.send(JSON.stringify({type:"pin",pin:p})); }
- modeBtn.onclick=()=>setMode(!follow);
- document.getElementById("prev").onclick=()=>localGo(-1);
- document.getElementById("next").onclick=()=>localGo(1);
- document.getElementById("resync").onclick=()=>setMode(true);
  document.getElementById("fs").onclick=()=>{ document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen(); };
- addEventListener("keydown",e=>{ if(e.key==="f"&&ready)document.getElementById("fs").click();
-   if(ready&&!follow){ if(e.key==="ArrowRight")localGo(1); if(e.key==="ArrowLeft")localGo(-1); } });
+ addEventListener("keydown",e=>{ if(e.key==="f"&&ready)document.getElementById("fs").click(); });
 
  function connect(){
    const proto=location.protocol==="https:"?"wss":"ws";
@@ -272,10 +264,9 @@ const VIEWER_HTML = `<!doctype html><html><head>
    ws.onopen=()=>dot.textContent="● connected";
    ws.onmessage=e=>{ const m=JSON.parse(e.data);
      if(m.type==="need_pin"){ showScreen("pin"); }
-     if(m.type==="ready"){ ready=true; EMBED_BASE=m.embedBase; SLIDE_IDS=m.slideIds||[];
-       if(SLIDE_IDS.length===0){ modeBtn.style.display="none"; nav.style.display="none"; } }
+     if(m.type==="ready"){ ready=true; EMBED_BASE=m.embedBase; if(isLive&&liveId)show(liveId); }
      if(m.type==="live"){ setLive(m.live); if(!ready&&!m.live)showScreen("wait"); }
-     if(m.type==="slide"){ liveId=m.slideId; if(Number.isInteger(m.index))localIdx=m.index; if(follow)show(m.slideId); }
+     if(m.type==="slide"){ liveId=m.slideId; show(m.slideId); }
      if(m.type==="denied"){ pinInput.value="";
        err.textContent = m.reason==="too_many" ? "錯太多次，已鎖定" : m.reason==="not_live" ? "目前沒有直播" : "PIN 錯誤，還可試 "+m.left+" 次"; } };
    ws.onclose=()=>{ dot.textContent="○ reconnecting…"; setTimeout(connect,1500); };
