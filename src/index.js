@@ -3,158 +3,272 @@
 // presenter 連著才 live；deck 設定（embed 網址＋slide ids＋pin）由 presenter 帶進來。
 
 export class Room {
-  constructor(ctx, env) { this.ctx = ctx; this.env = env; }
+	constructor(ctx, env) {
+		this.ctx = ctx;
+		this.env = env;
+	}
 
-  presenters() { return this.ctx.getWebSockets("presenter"); }
-  viewers()    { return this.ctx.getWebSockets("viewer"); }
-  async sha(s) {
-    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s)));
-    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
-  }
-  att(ws) { try { return ws.deserializeAttachment() || {}; } catch { return {}; } }
+	presenters() {
+		return this.ctx.getWebSockets("presenter");
+	}
+	viewers() {
+		return this.ctx.getWebSockets("viewer");
+	}
+	defer(promise) {
+		try {
+			if (typeof this.ctx.waitUntil === "function") this.ctx.waitUntil(promise);
+			else promise.catch(() => {});
+		} catch {}
+	}
+	async sha(s) {
+		const b = await crypto.subtle.digest(
+			"SHA-256",
+			new TextEncoder().encode(String(s)),
+		);
+		return [...new Uint8Array(b)]
+			.map((x) => x.toString(16).padStart(2, "0"))
+			.join("");
+	}
+	att(ws) {
+		try {
+			return ws.deserializeAttachment() || {};
+		} catch {
+			return {};
+		}
+	}
 
-  async fetch(request) {
-    const url = new URL(request.url);
-    const wantP = url.searchParams.get("role") === "presenter";
-    // presenter 身分由 CF Access JWT 驗證（不再用 PRESENT_KEY）。
-    // 本機 dev：在 .dev.vars 設 DEV_OPEN_PRESENTER=1 即可免 token 當 presenter（正式環境不會有這個 var）。
-    const devOpen = this.env.DEV_OPEN_PRESENTER === "1";
-    let role = "viewer";
-    if (wantP) {
-      if (devOpen) role = "presenter";
-      else if (await verifyAccessJwt(url.searchParams.get("cf_token") || "", this.env.ACCESS_TEAM_DOMAIN, this.env.ACCESS_AUD)) role = "presenter";
-      // 驗不過 → 仍當 viewer；extension 收到 role!=="presenter" 會清掉 token 重新登入
-    }
+	async fetch(request) {
+		const url = new URL(request.url);
+		const wantP = url.searchParams.get("role") === "presenter";
+		// presenter 身分由 CF Access JWT 驗證（不再用 PRESENT_KEY）。
+		// 本機 dev：在 .dev.vars 設 DEV_OPEN_PRESENTER=1 即可免 token 當 presenter（正式環境不會有這個 var）。
+		const devOpen = this.env.DEV_OPEN_PRESENTER === "1";
+		let role = "viewer";
+		if (wantP) {
+			if (devOpen) role = "presenter";
+			else if (
+				await verifyAccessJwt(
+					url.searchParams.get("cf_token") || "",
+					this.env.ACCESS_TEAM_DOMAIN,
+					this.env.ACCESS_AUD,
+				)
+			)
+				role = "presenter";
+			// 驗不過 → 仍當 viewer；extension 收到 role!=="presenter" 會清掉 token 重新登入
+		}
 
-    const { 0: client, 1: server } = new WebSocketPair();
-    this.ctx.acceptWebSocket(server, [role]);
-    try { server.send(JSON.stringify({ type: "role", role })); } catch {}
+		const { 0: client, 1: server } = new WebSocketPair();
+		this.ctx.acceptWebSocket(server, [role]);
+		try {
+			server.send(JSON.stringify({ type: "role", role }));
+		} catch {}
 
-    if (role === "presenter") {
-      await this.ctx.storage.setAlarm(Date.now() + 10000);   // 啟動 keepalive ping 迴圈，撐住 MV3 service worker
-      // 等 presenter 送 init（帶 pin/deck）後再決定怎麼對待 viewer
-    } else {
-      server.serializeAttachment({ verified: false, tries: 0 });
-      const deck = await this.ctx.storage.get("deck");
-      const live = this.presenters().length > 0;
-      if (live && deck && deck.pinHash)       try { server.send(JSON.stringify({ type: "need_pin" })); } catch {}
-      else if (live && deck && !deck.pinHash) await this.sendReady(server, deck);   // 沒設 pin → 直接放行
-      else                                    try { server.send(JSON.stringify({ type: "live", live: false })); } catch {}
-    }
-    return new Response(null, { status: 101, webSocket: client });
-  }
+		if (role === "presenter") {
+			await this.ctx.storage.setAlarm(Date.now() + 10000); // 啟動 keepalive ping 迴圈，撐住 MV3 service worker
+			// 等 presenter 送 init（帶 pin/deck）後再決定怎麼對待 viewer
+		} else {
+			server.serializeAttachment({ verified: false, tries: 0 });
+			const deck = await this.ctx.storage.get("deck");
+			const live = this.presenters().length > 0;
+			if (live && deck && deck.pinHash)
+				try {
+					server.send(JSON.stringify({ type: "need_pin" }));
+				} catch {}
+			else if (live && deck && !deck.pinHash)
+				await this.sendReady(server, deck); // 沒設 pin → 直接放行
+			else
+				try {
+					server.send(JSON.stringify({ type: "live", live: false }));
+				} catch {}
+		}
+		return new Response(null, { status: 101, webSocket: client });
+	}
 
-  async sendReady(ws, deck) {
-    try {
-      ws.send(JSON.stringify({ type: "ready", embedBase: deck.embedBase, slideIds: deck.slideIds }));
-      ws.send(JSON.stringify({ type: "live", live: this.presenters().length > 0 }));
-      const cur = await this.ctx.storage.get("current");
-      if (cur) ws.send(JSON.stringify({ type: "slide", ...cur }));
-    } catch {}
-  }
+	async sendReady(ws, deck) {
+		try {
+			ws.send(
+				JSON.stringify({
+					type: "ready",
+					embedBase: deck.embedBase,
+					slideIds: deck.slideIds,
+				}),
+			);
+			ws.send(
+				JSON.stringify({ type: "live", live: this.presenters().length > 0 }),
+			);
+			const cur = await this.ctx.storage.get("current");
+			if (cur) ws.send(JSON.stringify({ type: "slide", ...cur }));
+		} catch {}
+	}
 
-  async webSocketMessage(ws, message) {
-    let d; try { d = JSON.parse(message); } catch { return; }
-    const isP = this.ctx.getTags(ws).includes("presenter");
+	async webSocketMessage(ws, message) {
+		let d;
+		try {
+			d = JSON.parse(message);
+		} catch {
+			return;
+		}
+		const isP = this.ctx.getTags(ws).includes("presenter");
 
-    // presenter 開講：設定 deck + pin，並通知在線 viewer
-    if (isP && d.type === "init") {
-      const deck = {
-        pinHash: d.pin ? await this.sha(d.pin) : null,
-        embedBase: String(d.embedBase || ""),
-        slideIds: Array.isArray(d.slideIds) ? d.slideIds : [],
-      };
-      await this.ctx.storage.put("deck", deck);
-      for (const v of this.viewers()) {
-        if (this.att(v).verified) await this.sendReady(v, deck);
-        else if (deck.pinHash) try { v.send(JSON.stringify({ type: "need_pin" })); } catch {}
-        else await this.sendReady(v, deck);
-      }
-      return;
-    }
+		// presenter 開講：設定 deck + pin，並通知在線 viewer
+		if (isP && d.type === "init") {
+			const deck = {
+				pinHash: d.pin ? await this.sha(d.pin) : null,
+				embedBase: String(d.embedBase || ""),
+				slideIds: Array.isArray(d.slideIds) ? d.slideIds : [],
+			};
+			await this.ctx.storage.put("deck", deck);
+			for (const v of this.viewers()) {
+				if (this.att(v).verified) await this.sendReady(v, deck);
+				else if (deck.pinHash)
+					try {
+						v.send(JSON.stringify({ type: "need_pin" }));
+					} catch {}
+				else await this.sendReady(v, deck);
+			}
+			return;
+		}
 
-    // presenter 翻頁：只發給已驗證的 viewer
-    if (isP && d.type === "slide") {
-      const cur = { slideId: String(d.slideId ?? ""), index: Number.isInteger(d.index) ? d.index : null, ts: Date.now() };
-      await this.ctx.storage.put("current", cur);
-      const msg = JSON.stringify({ type: "slide", ...cur });
-      for (const v of this.viewers())    if (this.att(v).verified) { try { v.send(msg); } catch {} }
-      for (const p of this.presenters()) if (p !== ws) { try { p.send(msg); } catch {} }
-      return;
-    }
+		// presenter 翻頁：只發給已驗證的 viewer
+		if (isP && d.type === "slide") {
+			const cur = {
+				slideId: String(d.slideId ?? ""),
+				index: Number.isInteger(d.index) ? d.index : null,
+				ts: Date.now(),
+			};
+			this.defer(this.ctx.storage.put("current", cur));
+			const msg = JSON.stringify({ type: "slide", ...cur });
+			for (const v of this.viewers())
+				if (this.att(v).verified) {
+					try {
+						v.send(msg);
+					} catch {}
+				}
+			for (const p of this.presenters())
+				if (p !== ws) {
+					try {
+						p.send(msg);
+					} catch {}
+				}
+			return;
+		}
 
-    // viewer 送 PIN
-    if (!isP && d.type === "pin") {
-      const a = this.att(ws);
-      if (a.verified) return;
-      const deck = await this.ctx.storage.get("deck");
-      if (!deck || !deck.pinHash) { try { ws.send(JSON.stringify({ type: "denied", reason: "not_live" })); } catch {} return; }
-      a.tries = (a.tries || 0) + 1;
-      if (await this.sha(d.pin) === deck.pinHash) {
-        a.verified = true; ws.serializeAttachment(a);
-        await this.sendReady(ws, deck);
-      } else {
-        ws.serializeAttachment(a);
-        if (a.tries >= 5) { try { ws.send(JSON.stringify({ type: "denied", reason: "too_many" })); } catch {} try { ws.close(4003, "too many"); } catch {} }
-        else try { ws.send(JSON.stringify({ type: "denied", reason: "wrong", left: 5 - a.tries })); } catch {}
-      }
-      return;
-    }
-  }
+		// viewer 送 PIN
+		if (!isP && d.type === "pin") {
+			const a = this.att(ws);
+			if (a.verified) return;
+			const deck = await this.ctx.storage.get("deck");
+			if (!deck || !deck.pinHash) {
+				try {
+					ws.send(JSON.stringify({ type: "denied", reason: "not_live" }));
+				} catch {}
+				return;
+			}
+			a.tries = (a.tries || 0) + 1;
+			if ((await this.sha(d.pin)) === deck.pinHash) {
+				a.verified = true;
+				ws.serializeAttachment(a);
+				await this.sendReady(ws, deck);
+			} else {
+				ws.serializeAttachment(a);
+				if (a.tries >= 5) {
+					try {
+						ws.send(JSON.stringify({ type: "denied", reason: "too_many" }));
+					} catch {}
+					try {
+						ws.close(4003, "too many");
+					} catch {}
+				} else
+					try {
+						ws.send(
+							JSON.stringify({
+								type: "denied",
+								reason: "wrong",
+								left: 5 - a.tries,
+							}),
+						);
+					} catch {}
+			}
+			return;
+		}
+	}
 
-  async webSocketClose(ws, code) {
-    const wasP = this.ctx.getTags(ws).includes("presenter");
-    try { ws.close(code, "closing"); } catch {}
-    if (wasP && this.presenters().filter(s => s !== ws).length === 0)
-      await this.ctx.storage.setAlarm(Date.now() + 8000);
-  }
+	async webSocketClose(ws, code) {
+		const wasP = this.ctx.getTags(ws).includes("presenter");
+		try {
+			ws.close(code, "closing");
+		} catch {}
+		if (wasP && this.presenters().filter((s) => s !== ws).length === 0)
+			await this.ctx.storage.setAlarm(Date.now() + 8000);
+	}
 
-  async alarm() {
-    const ps = this.presenters();
-    if (ps.length > 0) {
-      // presenter 還在 → 每 10s 推一個 ping。外掛收到 WS 訊息會重置 MV3 service worker 的閒置計時器，避免被回收而斷線。
-      for (const p of ps) { try { p.send(JSON.stringify({ type: "ping" })); } catch {} }
-      await this.ctx.storage.setAlarm(Date.now() + 10000);
-      return;
-    }
-    await this.ctx.storage.delete("current");
-    for (const v of this.viewers()) if (this.att(v).verified) { try { v.send(JSON.stringify({ type: "live", live: false })); } catch {} }
-  }
+	async alarm() {
+		const ps = this.presenters();
+		if (ps.length > 0) {
+			// presenter 還在 → 每 10s 推一個 ping。外掛收到 WS 訊息會重置 MV3 service worker 的閒置計時器，避免被回收而斷線。
+			for (const p of ps) {
+				try {
+					p.send(JSON.stringify({ type: "ping" }));
+				} catch {}
+			}
+			await this.ctx.storage.setAlarm(Date.now() + 10000);
+			return;
+		}
+		await this.ctx.storage.delete("current");
+		for (const v of this.viewers())
+			if (this.att(v).verified) {
+				try {
+					v.send(JSON.stringify({ type: "live", live: false }));
+				} catch {}
+			}
+	}
 }
 
 // ───────────────────────── Worker ─────────────────────────
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const room = url.searchParams.get("room") || "default";
-    if (url.pathname === "/ws") {
-      if (request.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
-      return env.ROOM.get(env.ROOM.idFromName(room)).fetch(request);
-    }
-    // /present 由 CF Access 擋在前面（cf-gate 設定）。能走到這裡＝已登入。
-    // 帶 ext_redirect（外掛的 launchWebAuthFlow）→ 把 Access JWT 交回外掛；否則顯示登入完成頁。
-    if (url.pathname === "/present") return presentBridge(request, url);
-    if (url.pathname === "/view" || url.pathname === "/") return html(VIEWER_HTML);
-    return new Response("not found", { status: 404 });
-  },
+	async fetch(request, env) {
+		const url = new URL(request.url);
+		const room = url.searchParams.get("room") || "default";
+		if (url.pathname === "/ws") {
+			if (request.headers.get("Upgrade") !== "websocket")
+				return new Response("expected websocket", { status: 426 });
+			return env.ROOM.get(env.ROOM.idFromName(room)).fetch(request);
+		}
+		// /present 由 CF Access 擋在前面（cf-gate 設定）。能走到這裡＝已登入。
+		// 帶 ext_redirect（外掛的 launchWebAuthFlow）→ 把 Access JWT 交回外掛；否則顯示登入完成頁。
+		if (url.pathname === "/present") return presentBridge(request, url);
+		if (url.pathname === "/view" || url.pathname === "/")
+			return html(VIEWER_HTML);
+		return new Response("not found", { status: 404 });
+	},
 };
-function html(b) { return new Response(b, { headers: { "content-type": "text/html; charset=utf-8" } }); }
+function html(b) {
+	return new Response(b, {
+		headers: { "content-type": "text/html; charset=utf-8" },
+	});
+}
 
 // ───────────────────────── CF Access：登入橋接 + JWT 驗證 ─────────────────────────
 // 外掛用 chrome.identity.launchWebAuthFlow 開 /present?ext_redirect=<chromiumapp 網址>，
 // 在這裡（已過 Access）把 Cf-Access-Jwt-Assertion 以 #token=... 轉回外掛。
 function presentBridge(request, url) {
-  const isDev = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-  const token = request.headers.get("Cf-Access-Jwt-Assertion") || (isDev ? "dev" : "");
-  const redirect = url.searchParams.get("ext_redirect");
-  if (redirect) {
-    let ok = false;
-    try { ok = new URL(redirect).hostname.endsWith(".chromiumapp.org"); } catch {}
-    if (!ok) return new Response("bad redirect", { status: 400 });
-    if (!token) return new Response("no access token", { status: 401 });
-    return Response.redirect(redirect + "#token=" + encodeURIComponent(token), 302);
-  }
-  return html(SIGNED_IN_HTML);
+	const isDev = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+	const token =
+		request.headers.get("Cf-Access-Jwt-Assertion") || (isDev ? "dev" : "");
+	const redirect = url.searchParams.get("ext_redirect");
+	if (redirect) {
+		let ok = false;
+		try {
+			ok = new URL(redirect).hostname.endsWith(".chromiumapp.org");
+		} catch {}
+		if (!ok) return new Response("bad redirect", { status: 400 });
+		if (!token) return new Response("no access token", { status: 401 });
+		return Response.redirect(
+			redirect + "#token=" + encodeURIComponent(token),
+			302,
+		);
+	}
+	return html(SIGNED_IN_HTML);
 }
 
 const SIGNED_IN_HTML = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -166,42 +280,73 @@ background:#0b1220;color:#e7ecf3;font:16px/1.5 system-ui">
 // JWKS 快取（同一 isolate 內共用，1 小時）
 let JWKS_CACHE = { keys: null, exp: 0, url: "" };
 async function getJwks(certsUrl) {
-  if (JWKS_CACHE.keys && JWKS_CACHE.url === certsUrl && JWKS_CACHE.exp > Date.now()) return JWKS_CACHE.keys;
-  const r = await fetch(certsUrl);
-  if (!r.ok) return [];
-  const j = await r.json();
-  JWKS_CACHE = { keys: j.keys || [], exp: Date.now() + 3600_000, url: certsUrl };
-  return JWKS_CACHE.keys;
+	if (
+		JWKS_CACHE.keys &&
+		JWKS_CACHE.url === certsUrl &&
+		JWKS_CACHE.exp > Date.now()
+	)
+		return JWKS_CACHE.keys;
+	const r = await fetch(certsUrl);
+	if (!r.ok) return [];
+	const j = await r.json();
+	JWKS_CACHE = {
+		keys: j.keys || [],
+		exp: Date.now() + 3600_000,
+		url: certsUrl,
+	};
+	return JWKS_CACHE.keys;
 }
 function b64urlBytes(s) {
-  s = s.replace(/-/g, "+").replace(/_/g, "/"); s += "=".repeat((4 - s.length % 4) % 4);
-  const bin = atob(s), a = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
-  return a;
+	s = s.replace(/-/g, "+").replace(/_/g, "/");
+	s += "=".repeat((4 - (s.length % 4)) % 4);
+	const bin = atob(s),
+		a = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+	return a;
 }
-const b64urlStr = s => new TextDecoder().decode(b64urlBytes(s));
+const b64urlStr = (s) => new TextDecoder().decode(b64urlBytes(s));
 
 // 驗 Cloudflare Access 的 application JWT：簽章（RS256/JWKS）＋ iss / aud / exp。
 async function verifyAccessJwt(token, teamDomain, aud) {
-  if (!token || !teamDomain || !aud) return null;
-  const p = token.split(".");
-  if (p.length !== 3) return null;
-  let header, payload;
-  try { header = JSON.parse(b64urlStr(p[0])); payload = JSON.parse(b64urlStr(p[1])); } catch { return null; }
-  const iss = "https://" + teamDomain;
-  if (payload.iss !== iss) return null;
-  const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  if (!auds.includes(aud)) return null;
-  const now = Math.floor(Date.now() / 1000);
-  if (payload.exp && payload.exp < now) return null;
-  if (payload.nbf && payload.nbf > now + 60) return null;
-  const jwk = (await getJwks(iss + "/cdn-cgi/access/certs")).find(k => k.kid === header.kid);
-  if (!jwk) return null;
-  try {
-    const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
-    const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64urlBytes(p[2]), new TextEncoder().encode(p[0] + "." + p[1]));
-    return ok ? payload : null;
-  } catch { return null; }
+	if (!token || !teamDomain || !aud) return null;
+	const p = token.split(".");
+	if (p.length !== 3) return null;
+	let header, payload;
+	try {
+		header = JSON.parse(b64urlStr(p[0]));
+		payload = JSON.parse(b64urlStr(p[1]));
+	} catch {
+		return null;
+	}
+	const iss = "https://" + teamDomain;
+	if (payload.iss !== iss) return null;
+	const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+	if (!auds.includes(aud)) return null;
+	const now = Math.floor(Date.now() / 1000);
+	if (payload.exp && payload.exp < now) return null;
+	if (payload.nbf && payload.nbf > now + 60) return null;
+	const jwk = (await getJwks(iss + "/cdn-cgi/access/certs")).find(
+		(k) => k.kid === header.kid,
+	);
+	if (!jwk) return null;
+	try {
+		const key = await crypto.subtle.importKey(
+			"jwk",
+			jwk,
+			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+			false,
+			["verify"],
+		);
+		const ok = await crypto.subtle.verify(
+			"RSASSA-PKCS1-v1_5",
+			key,
+			b64urlBytes(p[2]),
+			new TextEncoder().encode(p[0] + "." + p[1]),
+		);
+		return ok ? payload : null;
+	} catch {
+		return null;
+	}
 }
 
 // ───────────────────────── Viewer 頁（PIN → 才拿到 deck） ─────────────────────────
@@ -241,23 +386,25 @@ const VIEWER_HTML = `<!doctype html><html><head>
        ui=document.getElementById("ui"),err=document.getElementById("err"),dot=document.getElementById("dot"),
        pinInput=document.getElementById("pinInput");
 
- // 每張看過的投影片都保留一個已載入的 iframe，切換時只切換可見性 → 回看 / 重訪即時、不重載。
- const CAP=12, cache=new Map(), lru=[];
+ // 保留單一已載入的 Google embed。翻頁時只改 URL hash，避免每張新投影片都建立 iframe 並等待完整載入。
+ let liveFrame=null;
  function slideUrl(id){ return EMBED_BASE+"#slide=id."+id; }
  function showScreen(s){ pinScreen.classList.toggle("hidden",s!=="pin"); waitScreen.classList.toggle("hidden",s!=="wait");
    ui.classList.toggle("hidden",s!=="live"); if(s==="pin")pinInput.focus(); }
- function reveal(f){ for(const el of stage.children) el.classList.toggle("show", el===f); }
+ function ensureFrame(){
+   if(liveFrame)return liveFrame;
+   liveFrame=document.createElement("iframe"); liveFrame.className="frame";
+   liveFrame.addEventListener("load",()=>{ liveFrame.dataset.loaded="1"; if(curId)liveFrame.classList.add("show"); });
+   stage.appendChild(liveFrame);
+   return liveFrame;
+ }
  function show(id){
    if(!ready||!isLive||!EMBED_BASE||id===curId)return; curId=id;
-   let f=cache.get(id);
-   if(f){ reveal(f); return; }                                  // 已預載 → 立刻切換
-   f=document.createElement("iframe"); f.className="frame"; f.src=slideUrl(id);
-   f.addEventListener("load",()=>{ if(curId===id) reveal(f); });  // 載好且仍是當前頁才換上（不白閃，舊頁先撐著）
-   stage.appendChild(f); cache.set(id,f); lru.push(id);
-   while(lru.length>CAP){ const old=lru.shift(); if(old===curId){ lru.push(old); continue; }
-     const e=cache.get(old); if(e){ e.remove(); cache.delete(old); } }
+   const f=ensureFrame();
+   if(f.dataset.loaded==="1")f.classList.add("show");             // 已載入後 hash navigation 會比重建 iframe 快很多
+   f.src=slideUrl(id);
  }
- function clearStage(){ stage.replaceChildren(); cache.clear(); lru.length=0; curId=null; }
+ function clearStage(){ stage.replaceChildren(); liveFrame=null; curId=null; }
  function setLive(v){ isLive=v; if(!ready)return;
    if(v){ showScreen("live"); if(liveId)show(liveId); }
    else { clearStage(); showScreen("wait"); } }
@@ -274,7 +421,7 @@ const VIEWER_HTML = `<!doctype html><html><head>
    ws.onopen=()=>dot.textContent="● connected";
    ws.onmessage=e=>{ const m=JSON.parse(e.data);
      if(m.type==="need_pin"){ showScreen("pin"); }
-     if(m.type==="ready"){ ready=true; EMBED_BASE=m.embedBase; if(isLive&&liveId)show(liveId); }
+     if(m.type==="ready"){ ready=true; if(EMBED_BASE!==m.embedBase){ EMBED_BASE=m.embedBase; clearStage(); } if(isLive&&liveId)show(liveId); }
      if(m.type==="live"){ setLive(m.live); if(!ready&&!m.live)showScreen("wait"); }
      if(m.type==="slide"){ liveId=m.slideId; show(m.slideId); }
      if(m.type==="denied"){ pinInput.value="";
