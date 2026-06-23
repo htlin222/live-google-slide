@@ -1,0 +1,15 @@
+{
+  "name": "slide-sync",
+  "version": "1.0.0",
+  "description": "Mirror your Google Slides to any device in real time through your own Cloudflare Worker, gated by a PIN.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "secret": "wrangler secret put PRESENT_KEY"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,8 @@
+# 本機開發用：複製這個檔成 .dev.vars（已被 .gitignore 忽略），填上你的值。
+# `wrangler dev` 會自動讀取 .dev.vars。
+#
+# 正式環境不要用這個檔，改用：
+#   npx wrangler secret put PRESENT_KEY
+#
+# PRESENT_KEY = presenter 控制密碼（決定誰能當主控端，不是給聽眾的 PIN）
+PRESENT_KEY=change-me

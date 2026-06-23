@@ -1,0 +1,18 @@
+name = "slide-sync"
+main = "src/index.js"
+# 2026-04-07+ 讓 web_socket_auto_reply_to_close 預設開啟
+compatibility_date = "2026-04-07"
+
+# 預設會部署到 *.workers.dev。要綁自訂網域時，取消下面註解、改成你的網域
+# （需先把該 zone 接進 Cloudflare）：
+# routes = [
+#   { pattern = "live.my-domain.com", custom_domain = true }
+# ]
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["Room"]

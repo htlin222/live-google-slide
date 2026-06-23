@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  body{font-family:system-ui;width:300px;margin:0;padding:14px;color:#222}
+  h1{font-size:15px;margin:0 0 10px}
+  label{display:block;margin:10px 0 4px;font-size:12px;color:#555}
+  input,textarea{width:100%;box-sizing:border-box;padding:8px;font-size:13px;border:1px solid #ccc;border-radius:8px}
+  textarea{height:54px;resize:vertical}
+  .row{display:flex;gap:8px;align-items:center}
+  .row input{flex:1}
+  button{padding:9px 14px;border:0;border-radius:8px;font-size:13px;cursor:pointer}
+  #start{background:#2b6;color:#fff;flex:1} #stop{background:#c33;color:#fff;flex:1}
+  #gen{background:#eee} 
+  #status{margin-top:12px;font-size:12px;padding:8px;border-radius:8px;background:#f3f3f3}
+  .pin{font-size:22px;letter-spacing:4px;font-weight:600}
+  a{font-size:12px;color:#27c;cursor:pointer} small{color:#999}
+</style></head><body>
+  <h1>開直播</h1>
+  <div id="warn" style="display:none;color:#c33;font-size:12px;margin-bottom:8px"></div>
+
+  <label>這份簡報的 embed 網址（發布到網路 → 嵌入）</label>
+  <textarea id="embed" placeholder="https://docs.google.com/presentation/d/e/XXXX/embed?..."></textarea>
+
+  <label>房間名稱 room</label>
+  <input id="room" placeholder="talk">
+
+  <label>PIN（報給聽眾）</label>
+  <div class="row"><input id="pin" maxlength="8"><button id="gen">產生</button></div>
+
+  <div class="row" style="margin-top:14px">
+    <button id="start">開始直播</button>
+    <button id="stop" style="display:none">結束</button>
+  </div>
+
+  <div id="status"></div>
+  <p><a id="opt">設定 CF 網址 / 控制密碼</a></p>
+  <script src="popup.js"></script>
+</body></html>

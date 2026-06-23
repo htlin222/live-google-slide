@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  body{font-family:system-ui;max-width:460px;margin:24px auto;padding:0 16px;color:#222}
+  h1{font-size:18px} label{display:block;margin:14px 0 4px;font-size:13px;color:#555}
+  input{width:100%;box-sizing:border-box;padding:10px;font-size:14px;border:1px solid #ccc;border-radius:8px}
+  button{margin-top:18px;padding:10px 20px;border:0;border-radius:8px;background:#2b6;color:#fff;font-size:14px;cursor:pointer}
+  #ok{color:#2a7;font-size:13px;margin-left:10px}
+  small{color:#888}
+</style></head><body>
+  <h1>Slide Live Relay — 設定</h1>
+  <label>Cloudflare 網址（你的 Worker，含 https://）</label>
+  <input id="cfUrl" placeholder="https://live.my-domain.com">
+  <label>控制密碼（對應 Worker 的 PRESENT_KEY）</label>
+  <input id="key" type="password" placeholder="presenter key">
+  <div><button id="save">儲存</button><span id="ok"></span></div>
+  <p><small>這兩個值只填一次，之後每份簡報都用同一組。PIN 是每場開講時在 popup 設定的。</small></p>
+  <script src="options.js"></script>
+</body></html>

@@ -1,0 +1,14 @@
+# deps / build
+node_modules/
+dist/
+.wrangler/
+
+# local secrets — never commit
+.dev.vars
+.env
+*.local
+
+# misc
+.DS_Store
+*.log
+npm-debug.log*
