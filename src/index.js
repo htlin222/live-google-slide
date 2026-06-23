@@ -386,25 +386,25 @@ const VIEWER_HTML = `<!doctype html><html><head>
        ui=document.getElementById("ui"),err=document.getElementById("err"),dot=document.getElementById("dot"),
        pinInput=document.getElementById("pinInput");
 
- // 雙緩衝：新頁在「背面」那塊 iframe 載入，load 完成才切到前面；舊頁先撐著 → 不白閃。
- //（Google embed 不吃 boot 後的 hashchange，改 src 會整個 reload，所以同一塊可見 frame 不可能不閃；必須換一塊。）
- let frames=[],front=0;
+ // 保留單一已載入的 Google embed。翻頁時只改 URL hash，避免每張新投影片都建立 iframe 並等待完整載入。
+ let liveFrame=null;
  function slideUrl(id){ return EMBED_BASE+"#slide=id."+id; }
  function showScreen(s){ pinScreen.classList.toggle("hidden",s!=="pin"); waitScreen.classList.toggle("hidden",s!=="wait");
    ui.classList.toggle("hidden",s!=="live"); if(s==="pin")pinInput.focus(); }
- function ensureFrames(){
-   if(frames.length)return;
-   for(let i=0;i<2;i++){ const f=document.createElement("iframe"); f.className="frame"; stage.appendChild(f); frames.push(f); }
+ function ensureFrame(){
+   if(liveFrame)return liveFrame;
+   liveFrame=document.createElement("iframe"); liveFrame.className="frame";
+   liveFrame.addEventListener("load",()=>{ liveFrame.dataset.loaded="1"; if(curId)liveFrame.classList.add("show"); });
+   stage.appendChild(liveFrame);
+   return liveFrame;
  }
  function show(id){
    if(!ready||!isLive||!EMBED_BASE||id===curId)return; curId=id;
-   ensureFrames();
-   const back=frames[front^1];
-   back.onload=()=>{ if(curId!==id)return;                        // 載入期間又翻頁了就放棄這次切換
-     back.classList.add("show"); frames[front].classList.remove("show"); front^=1; };
-   back.src=slideUrl(id);
+   const f=ensureFrame();
+   if(f.dataset.loaded==="1")f.classList.add("show");             // 已載入後 hash navigation 會比重建 iframe 快很多
+   f.src=slideUrl(id);
  }
- function clearStage(){ stage.replaceChildren(); frames=[]; front=0; curId=null; }
+ function clearStage(){ stage.replaceChildren(); liveFrame=null; curId=null; }
  function setLive(v){ isLive=v; if(!ready)return;
    if(v){ showScreen("live"); if(liveId)show(liveId); }
    else { clearStage(); showScreen("wait"); } }
