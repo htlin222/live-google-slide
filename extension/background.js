@@ -6,15 +6,22 @@
 // 轉回外掛；WS 帶 ?cf_token=<JWT> 連線，Worker 端驗 JWT 才給 presenter。
 
 let ws = null;
-let cfg = null;          // { cfUrl, embedBase, room, pin }
+let cfg = null;          // { cfUrl, pin }
 let lastSlideId = null;
 let retry = 0;
 let reauthing = false;
 let connecting = false;
+let deckEmbed = null;    // 目前這份 deck 的 embed（由 content.js 從現場頁面推出，永遠是最新、正確的 deck）
 
-function wsUrl(cfUrl, room, token) {
+// 單一 presenter，房間固定 default（與觀眾打開的 live.hsiehting.com 一致）。
+function wsUrl(cfUrl, token) {
   const base = cfUrl.replace(/^http/, "ws").replace(/\/$/, "");
-  return base + "/ws?role=presenter&room=" + encodeURIComponent(room) + "&cf_token=" + encodeURIComponent(token);
+  return base + "/ws?role=presenter&room=default&cf_token=" + encodeURIComponent(token);
+}
+function sendInit() {
+  // 只接受乾淨的 URL；舊版可能存了 <iframe src=...> 片段，過濾掉。
+  const fallback = cfg && /^https?:\/\//.test(cfg.embedBase || "") ? cfg.embedBase : "";
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "init", pin: cfg && cfg.pin, embedBase: deckEmbed || fallback, slideIds: [] }));
 }
 
 function broadcastStatus() {
@@ -70,12 +77,12 @@ async function connect(interactive = false) {
   try { token = await getToken(cfg.cfUrl, interactive); } finally { connecting = false; }
   if (!token) { console.warn("[lgs] 沒有 token，暫不連線"); broadcastStatus(); return; }   // 沒登入就先不連
   if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;  // 取 token 期間已有人連上
-  console.log("[lgs] 連線 WS", { room: cfg.room, url: cfg.cfUrl });
-  ws = new WebSocket(wsUrl(cfg.cfUrl, cfg.room, token));
+  console.log("[lgs] 連線 WS", { url: cfg.cfUrl, embed: deckEmbed || cfg.embedBase });
+  ws = new WebSocket(wsUrl(cfg.cfUrl, token));
 
   ws.onopen = () => {
     retry = 0;
-    ws.send(JSON.stringify({ type: "init", pin: cfg.pin, embedBase: cfg.embedBase, slideIds: [] }));
+    sendInit();
     if (lastSlideId) ws.send(JSON.stringify({ type: "slide", slideId: lastSlideId }));
     broadcastStatus();
   };
@@ -115,9 +122,12 @@ function stop() {
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   switch (msg.type) {
-    case "start": cfg = msg.cfg; lastSlideId = null; connect(true); break;   // 使用者按開始 → 允許彈登入視窗
+    case "start": cfg = msg.cfg; lastSlideId = null; if (msg.cfg && msg.cfg.embedBase) deckEmbed = msg.cfg.embedBase; connect(true); break;
     case "stop": stop(); break;
     case "slide": sendSlide(msg.slideId); break;
+    case "deck":  // content.js 從現場 deck 頁推來的 embed（最新、正確）→ 更新並重發 init
+      if (msg.embedBase && msg.embedBase !== deckEmbed) { deckEmbed = msg.embedBase; sendInit(); }
+      break;
     case "resume": resume(); break;
     case "signin": login(msg.cfUrl, true).then(t => reply({ ok: !!t })); return true;
     case "authState": chrome.storage.local.get("cfToken").then(g => reply({ signedIn: tokenAlive(g.cfToken) })); return true;

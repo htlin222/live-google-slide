@@ -74,11 +74,11 @@ $("signin").onclick = async () => {
 $("start").onclick = async () => {
   const sync = await chrome.storage.sync.get(["cfUrl"]);
   if (!sync.cfUrl) { chrome.runtime.openOptionsPage(); return; }
-  const embedBase = await activeSlideEmbed();   // 從目前作用中的 Slides 分頁自動取得
-  if (!embedBase) { $("warn").style.display = "block"; $("warn").textContent = "請在要直播的 Google Slides 分頁上開這個 popup 再按開始。"; return; }
   const pin = $("pin").value.trim();
+  const embedBase = await activeSlideEmbed();   // 若 popup 開在 Slides 分頁上就帶入；否則由該分頁的 content.js 補上
+  $("warn").style.display = "none";
 
-  const deckCfg = { cfUrl: sync.cfUrl, embedBase, room: "default", pin };
+  const deckCfg = { cfUrl: sync.cfUrl, embedBase, pin };
   await chrome.storage.local.set({ deckCfg, active: true });
   await chrome.runtime.sendMessage({ type: "start", cfg: deckCfg });
   setActive(true);
