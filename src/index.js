@@ -406,22 +406,29 @@ const VIEWER_HTML = `<!doctype html><html><head>
 
  document.getElementById("pinGo").onclick=sendPin;
  pinInput.addEventListener("keydown",e=>{ if(e.key==="Enter")sendPin(); });
- function sendPin(){ const p=pinInput.value.trim(); if(!p)return; err.textContent=""; ws.send(JSON.stringify({type:"pin",pin:p})); }
+ // 記住驗證過的 PIN：斷線重連時自動補送，簡報中不會被丟回輸入畫面；PIN 被輪替而失效時才忘記、重問。
+ let myPin=null; try{ myPin=sessionStorage.getItem("lgs_pin"); }catch{}
+ const rememberPin=p=>{ myPin=p; try{ sessionStorage.setItem("lgs_pin",p); }catch{} };
+ const forgetPin=()=>{ myPin=null; try{ sessionStorage.removeItem("lgs_pin"); }catch{} };
+ function sendPin(){ const p=pinInput.value.trim(); if(!p)return; err.textContent=""; rememberPin(p); ws.send(JSON.stringify({type:"pin",pin:p})); }
  document.getElementById("fs").onclick=()=>{ document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen(); };
  addEventListener("keydown",e=>{ if(e.key==="f"&&ready)document.getElementById("fs").click(); });
 
+ let backoff=600, hbTimer;
  function connect(){
    const proto=location.protocol==="https:"?"wss":"ws";
    ws=new WebSocket(proto+"://"+location.host+"/ws?role=viewer&room="+encodeURIComponent(room));
-   ws.onopen=()=>dot.textContent="● connected";
+   ws.onopen=()=>{ dot.textContent="● 已連線"; backoff=600;
+     clearInterval(hbTimer); hbTimer=setInterval(()=>{ try{ if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:"hb"})); }catch{} },25000); };  // 心跳：避免 idle 被中間代理掐斷
    ws.onmessage=e=>{ const m=JSON.parse(e.data);
-     if(m.type==="need_pin"){ showScreen("pin"); }
+     if(m.type==="need_pin"){ if(myPin) ws.send(JSON.stringify({type:"pin",pin:myPin})); else showScreen("pin"); }  // 重連自動補送已記住的 PIN，畫面不打擾、投影片續留
      if(m.type==="ready"){ ready=true; DECK_URL=m.embedBase; if(isLive&&liveId)show(liveId); }
      if(m.type==="live"){ setLive(m.live); if(!ready&&!m.live)showScreen("wait"); }
      if(m.type==="slide"){ liveId=m.slideId; show(m.slideId); }
-     if(m.type==="denied"){ pinInput.value="";
+     if(m.type==="denied"){ forgetPin(); pinInput.value=""; showScreen("pin");   // 記住的 PIN 失效（被輪替）才回到輸入畫面
        err.textContent = m.reason==="too_many" ? "錯太多次，已鎖定" : m.reason==="not_live" ? "目前沒有直播" : "PIN 錯誤，還可試 "+m.left+" 次"; } };
-   ws.onclose=()=>{ dot.textContent="○ reconnecting…"; setTimeout(connect,1500); };
+   ws.onerror=()=>{ try{ ws.close(); }catch{} };
+   ws.onclose=()=>{ dot.textContent="○ 重新連線中…"; clearInterval(hbTimer); setTimeout(connect,backoff); backoff=Math.min(backoff*2,5000); };  // 指數退避快速重連
  }
  connect();
 </script></body></html>`;
