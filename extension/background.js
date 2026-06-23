@@ -21,7 +21,7 @@ function wsUrl(cfUrl, token) {
 function sendInit() {
   // 只接受乾淨的 URL；舊版可能存了 <iframe src=...> 片段，過濾掉。
   const fallback = cfg && /^https?:\/\//.test(cfg.embedBase || "") ? cfg.embedBase : "";
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "init", pin: cfg && cfg.pin, embedBase: deckEmbed || fallback, slideIds: [] }));
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "init", pin: cfg && cfg.pin, embedBase: deckEmbed || fallback }));
 }
 
 function broadcastStatus() {
