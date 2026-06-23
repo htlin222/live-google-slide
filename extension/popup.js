@@ -2,6 +2,18 @@ const $ = id => document.getElementById(id);
 const VIEW_HINT = u => u.replace(/\/$/, "") + "/view?room=";
 const genPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
+// 從 Google Slides 網址自動推出 embed 網址（免「發布到網路」手動複製）。
+// 用檔案 ID 的 /d/<id>/embed 形式：deck 設成「知道連結的人皆可檢視」即可。
+const SLIDE_RE = /\/presentation\/d\/([^/]+)/;
+const embedFromUrl = u => {
+  const m = (u || "").match(SLIDE_RE);
+  return m ? `https://docs.google.com/presentation/d/${m[1]}/embed?start=false&loop=false&rm=minimal` : "";
+};
+async function activeSlideEmbed() {
+  try { const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }); return embedFromUrl(tab && tab.url); }
+  catch { return ""; }
+}
+
 async function init() {
   const sync = await chrome.storage.sync.get(["cfUrl"]);
   const local = await chrome.storage.local.get(["deckCfg", "active"]);
@@ -9,8 +21,8 @@ async function init() {
   if (!sync.cfUrl) { $("warn").style.display = "block"; $("warn").textContent = "請先點右上 ⚙ 填你的 Cloudflare 網址。"; }
 
   const c = local.deckCfg || {};
-  $("embed").value = c.embedBase || "";
-  $("room").value = c.room || "talk";
+  $("embed").value = c.embedBase || await activeSlideEmbed();
+  $("room").value = c.room || "default";
   $("pin").value = c.pin || genPin();
 
   setActive(local.active);
@@ -63,7 +75,7 @@ $("start").onclick = async () => {
   const sync = await chrome.storage.sync.get(["cfUrl"]);
   if (!sync.cfUrl) { chrome.runtime.openOptionsPage(); return; }
   const embedBase = $("embed").value.trim();
-  const room = $("room").value.trim() || "talk";
+  const room = $("room").value.trim() || "default";
   const pin = $("pin").value.trim();
   if (!embedBase) { $("warn").style.display = "block"; $("warn").textContent = "請貼 embed 網址。"; return; }
 

@@ -14,8 +14,8 @@ routes = [
 # 兩個都是公開設定、非機密；空著時 presenter 一律驗不過（fail-closed），
 # 本機 dev 走 localhost 例外放行，不受影響。
 [vars]
-ACCESS_TEAM_DOMAIN = ""   # 例：yourteam.cloudflareaccess.com
-ACCESS_AUD = ""           # Access application 的 Audience (AUD) tag
+ACCESS_TEAM_DOMAIN = "htlin.cloudflareaccess.com"
+ACCESS_AUD = "7726694704b3afe4598b00171c8da9eca07a912216cc506cbf57575dc4c065b2"
 
 [[durable_objects.bindings]]
 name = "ROOM"

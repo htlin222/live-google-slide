@@ -12,6 +12,12 @@
 
   const genPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
+  // 從目前 Slides 編輯頁網址自動推出 embed 網址（免手動「發布到網路」）。
+  const embedFromUrl = u => {
+    const m = (u || "").match(/\/presentation\/d\/([^/]+)/);
+    return m ? `https://docs.google.com/presentation/d/${m[1]}/embed?start=false&loop=false&rm=minimal` : "";
+  };
+
   // 小型 DOM 建構器（避開 innerHTML / Trusted Types）
   function h(tag, props, ...kids) {
     const e = document.createElement(tag);
@@ -76,14 +82,14 @@
   authBox.append(authIco, authWho, signinB);
 
   const warn = h("div", { class: "lgs-warn" });
-  const embedI = h("textarea", { id: "lgs-embed", placeholder: "https://docs.google.com/presentation/d/e/XXXX/pubembed?..." });
-  const roomI = h("input", { id: "lgs-room", placeholder: "talk" });
+  const embedI = h("textarea", { id: "lgs-embed", placeholder: "開著 Slides 分頁就會自動填好" });
+  const roomI = h("input", { id: "lgs-room", placeholder: "default" });
   const pinI = h("input", { id: "lgs-pin", maxlength: "8" });
   const genB = h("button", { class: "lgs-gen", textContent: "產生" });
   const startB = h("button", { class: "lgs-start", textContent: "開始直播" });
   const stopB = h("button", { class: "lgs-stop", style: "display:none", textContent: "結束" });
   const statusBox = h("div", { class: "lgs-status" });
-  const cfI = h("input", { id: "lgs-cf", placeholder: "https://live.hsiehting.com" });
+  const cfI = h("input", { id: "lgs-cf", placeholder: "https://live.example.com" });
   const adv = h("div", { class: "lgs-adv", hidden: true },
     h("label", { textContent: "Cloudflare 網址（你的 Worker，含 https://）" }), cfI,
     h("div", { class: "lgs-hint", textContent: "只填一次，之後每份簡報共用。presenter 身分由 CF Access 把關。" }));
@@ -91,7 +97,7 @@
 
   const panel = h("div", { class: "lgs-panel", hidden: true },
     authBox, warn,
-    h("label", { textContent: "這份簡報的 embed 網址（發布到網路 → 嵌入）" }), embedI,
+    h("label", { textContent: "embed 網址（已自動帶入；deck 需設為知道連結者可檢視）" }), embedI,
     h("div", { class: "lgs-row", style: "margin-top:4px" },
       h("div", { style: "flex:1" }, h("label", { textContent: "房間 room" }), roomI),
       h("div", { style: "flex:1" }, h("label", { textContent: "PIN" }),
@@ -104,8 +110,8 @@
     const sync = await chrome.storage.sync.get(["cfUrl"]);
     const local = await chrome.storage.local.get(["deckCfg", "active"]);
     const c = local.deckCfg || {};
-    embedI.value = c.embedBase || "";
-    roomI.value = c.room || "talk";
+    embedI.value = c.embedBase || embedFromUrl(location.href);
+    roomI.value = c.room || "default";
     pinI.value = c.pin || genPin();
     cfI.value = sync.cfUrl || "";
     if (!sync.cfUrl) adv.hidden = false;
@@ -179,7 +185,7 @@
   startB.addEventListener("click", async () => {
     const cfUrl = cfI.value.trim();
     const embedBase = embedI.value.trim();
-    const room = roomI.value.trim() || "talk", pin = pinI.value.trim();
+    const room = roomI.value.trim() || "default", pin = pinI.value.trim();
     if (!cfUrl) { adv.hidden = false; warn.textContent = "請先填 CF 網址。"; return; }
     if (!embedBase) { warn.textContent = "請貼 embed 網址。"; return; }
     warn.textContent = "";

@@ -66,7 +66,7 @@ deploy: node_modules ## 部署 Worker 到 Cloudflare（wrangler deploy）
 .PHONY: gate
 gate: ## 提示：用 cf-gate 讓 CF Access 保護 /present（presenter 登入）
 	@echo "用 Claude 的 cf-gate 技能保護 presenter 端，例如："
-	@echo "  把 live.hsiehting.com/present 放到 CF Access 後面，只允許你的 email"
+	@echo "  把 live.example.com/present 放到 CF Access 後面，只允許你的 email"
 	@echo "完成後把 team 網域與 application AUD 填進 wrangler.toml 的 [vars]，再 make deploy。"
 
 ## ── 雜項 ───────────────────────────────────────────────

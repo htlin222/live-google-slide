@@ -34,7 +34,7 @@ npx wrangler login
 make deploy              # = wrangler deploy（預設部署到 *.workers.dev）
 ```
 
-要綁自訂網域（例如 `live.my-domain.com`）：先把該網域接進 Cloudflare，再到 `wrangler.toml` 改 `routes` 成你的網域，重新 `make deploy`。
+要綁自訂網域（例如 `live.example.com`）：先把該網域接進 Cloudflare，再到 `wrangler.toml` 改 `routes` 成你的網域，重新 `make deploy`。
 
 **presenter 端用 CF Access 把關**（取代舊的 `PRESENT_KEY`）：用 Claude 的 `cf-gate` 技能把 `你的網址/present` 放到 Cloudflare Access 後面、只允許你的 email（`make gate` 有提示）。設好後把 team 網域與 application AUD 填進 `wrangler.toml` 的 `[vars]`（`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`），再 `make deploy`。這兩個值是公開設定、非機密。
 

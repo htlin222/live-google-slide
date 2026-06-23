@@ -54,11 +54,12 @@
     <button id="signin">登入</button>
   </div>
 
-  <label>這份簡報的 embed 網址（發布到網路 → 嵌入）</label>
-  <textarea id="embed" placeholder="https://docs.google.com/presentation/d/e/XXXX/embed?..."></textarea>
+  <label>embed 網址（開著 Slides 分頁會自動帶入）</label>
+  <textarea id="embed" placeholder="開一個 Google Slides 分頁就會自動填好"></textarea>
+  <div style="font-size:11px;color:var(--mut);margin-top:4px">deck 需設為「知道連結的人皆可檢視」，觀眾的 iframe 才載得到。</div>
 
   <div class="row" style="margin-top:4px">
-    <div style="flex:1"><label>房間 room</label><input id="room" placeholder="talk"></div>
+    <div style="flex:1"><label>房間 room</label><input id="room" placeholder="default"></div>
     <div style="flex:1"><label>PIN（報給聽眾）</label><div class="row"><input id="pin" maxlength="8"><button id="gen">產生</button></div></div>
   </div>
 
