@@ -221,7 +221,7 @@ const VIEWER_HTML = `<!doctype html><html><head>
  body:hover #ui{opacity:1}#ui button{font-size:13px;padding:7px 12px;border:0;border-radius:8px;background:#fff3;color:#fff;cursor:pointer}
  #dot{opacity:.8}
 </style></head><body>
-<iframe id="a" class="frame"></iframe><iframe id="b" class="frame"></iframe>
+<div id="stage"></div>
 
 <div id="pinScreen" class="screen hidden">
  <div style="font-size:18px">輸入 PIN 進入直播</div>
@@ -235,22 +235,32 @@ const VIEWER_HTML = `<!doctype html><html><head>
 </div>
 <script>
  const room=new URLSearchParams(location.search).get("room")||"default";
- let A=document.getElementById("a"),B=document.getElementById("b");
+ const stage=document.getElementById("stage");
  let EMBED_BASE=null,curId=null,liveId=null,isLive=false,ready=false,ws;
  const pinScreen=document.getElementById("pinScreen"),waitScreen=document.getElementById("waitScreen"),
        ui=document.getElementById("ui"),err=document.getElementById("err"),dot=document.getElementById("dot"),
        pinInput=document.getElementById("pinInput");
 
+ // 每張看過的投影片都保留一個已載入的 iframe，切換時只切換可見性 → 回看 / 重訪即時、不重載。
+ const CAP=12, cache=new Map(), lru=[];
  function slideUrl(id){ return EMBED_BASE+"#slide=id."+id; }
  function showScreen(s){ pinScreen.classList.toggle("hidden",s!=="pin"); waitScreen.classList.toggle("hidden",s!=="wait");
    ui.classList.toggle("hidden",s!=="live"); if(s==="pin")pinInput.focus(); }
- // 預載到隱藏的 B，載好立刻換上，避免白閃；觀眾永遠跟著 presenter。
- function show(id){ if(!ready||!isLive||!EMBED_BASE||id===curId)return; curId=id;
-   B.onload=()=>{ B.classList.add("show"); A.classList.remove("show"); const t=A;A=B;B=t; };
-   B.classList.remove("show"); B.src=slideUrl(id); }
+ function reveal(f){ for(const el of stage.children) el.classList.toggle("show", el===f); }
+ function show(id){
+   if(!ready||!isLive||!EMBED_BASE||id===curId)return; curId=id;
+   let f=cache.get(id);
+   if(f){ reveal(f); return; }                                  // 已預載 → 立刻切換
+   f=document.createElement("iframe"); f.className="frame"; f.src=slideUrl(id);
+   f.addEventListener("load",()=>{ if(curId===id) reveal(f); });  // 載好且仍是當前頁才換上（不白閃，舊頁先撐著）
+   stage.appendChild(f); cache.set(id,f); lru.push(id);
+   while(lru.length>CAP){ const old=lru.shift(); if(old===curId){ lru.push(old); continue; }
+     const e=cache.get(old); if(e){ e.remove(); cache.delete(old); } }
+ }
+ function clearStage(){ stage.replaceChildren(); cache.clear(); lru.length=0; curId=null; }
  function setLive(v){ isLive=v; if(!ready)return;
    if(v){ showScreen("live"); if(liveId)show(liveId); }
-   else { A.classList.remove("show"); B.classList.remove("show"); curId=null; showScreen("wait"); } }
+   else { clearStage(); showScreen("wait"); } }
 
  document.getElementById("pinGo").onclick=sendPin;
  pinInput.addEventListener("keydown",e=>{ if(e.key==="Enter")sendPin(); });
