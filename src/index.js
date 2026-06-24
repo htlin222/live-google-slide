@@ -347,6 +347,10 @@ const VIEWER_HTML = `<!doctype html><html><head>
  .frame{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:0;pointer-events:none;object-fit:contain}.frame.show{opacity:1}
  .screen{position:fixed;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:#000;z-index:5}
  .hidden{display:none}
+ #loadScreen{background:#000;z-index:5}
+ .spin{width:44px;height:44px;border:4px solid #ffffff22;border-top-color:#2b6;border-radius:50%;animation:spin 1s linear infinite}
+ #loadMsg{font-size:15px;opacity:.75}
+ @keyframes spin{to{transform:rotate(360deg)}}
  input{font-size:28px;letter-spacing:8px;text-align:center;width:200px;padding:12px;border-radius:10px;border:0;background:#222;color:#fff}
  .screen button{font-size:18px;padding:12px 26px;border:0;border-radius:10px;background:#2b6;color:#fff}
  #err{color:#e66;font-size:14px;min-height:18px}
@@ -363,6 +367,7 @@ const VIEWER_HTML = `<!doctype html><html><head>
  <button id="pinGo">進入</button><div id="err"></div>
 </div>
 <div id="waitScreen" class="screen">演講尚未開始</div>
+<div id="loadScreen" class="screen hidden"><div class="spin"></div><div id="loadMsg">載入中…</div></div>
 
 <div id="ui" class="hidden">
  <span id="dot">connecting…</span><button id="fs">⛶ 全螢幕</button>
@@ -372,8 +377,12 @@ const VIEWER_HTML = `<!doctype html><html><head>
  const stage=document.getElementById("stage");
  let DECK_URL=null,curId=null,liveId=null,isLive=false,ready=false,ws;
  const pinScreen=document.getElementById("pinScreen"),waitScreen=document.getElementById("waitScreen"),
+       loadScreen=document.getElementById("loadScreen"),loadMsg=document.getElementById("loadMsg"),
        ui=document.getElementById("ui"),err=document.getElementById("err"),dot=document.getElementById("dot"),
        pinInput=document.getElementById("pinInput");
+ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ // loading 蓋層：進 live 後到第一張 frame decode 完之間、或 decode 失敗自癒重試時顯示，避免純黑畫面沒回饋。
+ function setLoading(on,msg){ loadScreen.classList.toggle("hidden",!on); loadMsg.textContent=on&&msg?msg:"載入中…"; }
 
  // 觀眾端不嵌 Google live embed，改顯示每頁的匯出 SVG（docs.google.com/.../export/svg?pageid=<objectId>，匿名可取；向量＝不糊）。
  // <img>.decode() 在解碼、保證畫得出來那一刻才 resolve → deterministic：載好才硬切，不閃、不黑，且比 boot 一個 embed 快得多。
@@ -383,7 +392,7 @@ const VIEWER_HTML = `<!doctype html><html><head>
  // SVG（向量）→ 任何尺寸都銳利、不糊；PNG 匯出解析度固定，放大會模糊。
  function assetUrl(id){ const d=deckId(); return "https://docs.google.com/presentation/d/"+d+"/export/svg?id="+d+"&pageid="+id; }
  function showScreen(s){ pinScreen.classList.toggle("hidden",s!=="pin"); waitScreen.classList.toggle("hidden",s!=="wait");
-   ui.classList.toggle("hidden",s!=="live"); if(s==="pin")pinInput.focus(); }
+   ui.classList.toggle("hidden",s!=="live"); if(s!=="live")setLoading(false); if(s==="pin")pinInput.focus(); }
  function frameFor(id){
    let img=cache.get(id); if(img)return img;
    img=new Image(); img.className="frame"; img.decoding="async"; img.src=assetUrl(id);
@@ -395,14 +404,27 @@ const VIEWER_HTML = `<!doctype html><html><head>
  async function show(id){
    if(!ready||!isLive||!deckId()||id===curId)return; curId=id;
    const img=frameFor(id);
-   try{ await img.decode(); }catch{ try{ img.src=assetUrl(id); await img.decode(); }catch{} }  // 解碼完成＝可畫；失敗重試一次
-   if(curId!==id)return;                                          // decode 期間又翻頁 → 放棄這次切換（舊頁先撐著）
+   const fresh=!(img.complete&&img.naturalWidth>0);              // 還沒載好才需要 loading＋自癒重試
+   if(fresh)setLoading(true);
+   // Google 的 SVG export 首抓常是冷的（剛發布、未暖機）會慢或暫時回 redirect/HTML 讓 decode reject。
+   // 退避重試到成功為止（不再只試一次就放棄），cache-bust 重抓避開壞掉的快取 → 自癒，免手動 hard-refresh。
+   for(let attempt=0; fresh && curId===id; attempt++){
+     try{ await img.decode(); break; }
+     catch{
+       if(curId!==id)return;                                     // decode 期間又翻頁 → 放棄這次切換（舊頁先撐著）
+       setLoading(true, attempt>=3 ? "載入投影片中，請確認簡報已發布到網路…" : attempt>=1 ? "投影片載入中，重試…" : null);
+       await sleep(Math.min(500*2**attempt,4000));
+       img.src=assetUrl(id)+"&_r="+attempt;                      // cache-bust 重抓
+     }
+   }
+   if(curId!==id)return;
    for(const el of stage.children) el.classList.toggle("show", el===img);
+   setLoading(false);
  }
  function clearStage(){ stage.replaceChildren(); cache.clear(); lru.length=0; curId=null; }
  function setLive(v){ isLive=v; if(!ready)return;
-   if(v){ showScreen("live"); if(liveId)show(liveId); }
-   else { clearStage(); showScreen("wait"); } }
+   if(v){ showScreen("live"); if(liveId)show(liveId); else setLoading(true,"等待第一頁…"); }  // 已 live 但還沒收到第一張 → 轉圈，不要黑屏
+   else { clearStage(); setLoading(false); showScreen("wait"); } }
 
  document.getElementById("pinGo").onclick=sendPin;
  pinInput.addEventListener("keydown",e=>{ if(e.key==="Enter")sendPin(); });
